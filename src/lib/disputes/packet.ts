@@ -53,3 +53,55 @@ export async function buildEvidencePdf(input: PacketInput): Promise<Uint8Array> 
   return pdf.save();
 }
 
+class Writer {
+  private page: PDFPage;
+  private y = 0;
+  private readonly size = 10;
+  private readonly margin = 50;
+
+  constructor(
+    private readonly pdf: PDFDocument,
+    private readonly font: PDFFont,
+    private readonly bold: PDFFont,
+  ) {
+    this.page = this.newPage();
+  }
+
+  private newPage() {
+    const p = this.pdf.addPage([612, 792]);
+    this.y = 792 - this.margin;
+    return p;
+  }
+
+  heading(text: string) {
+    this.write(clean(text), this.bold, 12);
+  }
+
+  line(text: string, emphasise = false) {
+    this.write(clean(text), emphasise ? this.bold : this.font, this.size);
+  }
+
+  gap() {
+    this.y -= 8;
+  }
+
+  private write(text: string, font: PDFFont, size: number) {
+    const width = 612 - this.margin * 2;
+    const words = text.split(" ");
+    let current = "";
+    const flush = () => {
+      if (this.y < this.margin) this.page = this.newPage();
+      this.page.drawText(current, { x: this.margin, y: this.y, size, font, color: rgb(0.1, 0.1, 0.12) });
+      this.y -= size + 4;
+      current = "";
+    };
+    for (const w of words) {
+      const next = current ? `${current} ${w}` : w;
+      if (font.widthOfTextAtSize(next, size) > width && current) {
+        flush();
+        current = w;
+      } else current = next;
+    }
+    flush();
+  }
+}
