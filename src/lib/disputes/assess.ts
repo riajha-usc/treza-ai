@@ -97,3 +97,37 @@ export const DEFAULT_DISPUTE_POLICY: DisputePolicy = { challengeFeeMinor: 2_000,
 
 export type DisputeAction = "challenge" | "accept" | "escalate";
 
+export interface Economics {
+  amountMinor: number;
+  challengeFeeMinor: number;
+  /** Expected loss if we accept: the full amount. */
+  acceptLossMinor: number;
+  /** Expected loss if we challenge: the fee plus the amount times the chance of losing. */
+  challengeLossMinor: number;
+}
+
+/** Chooses the cheaper path in expected value, unless a red flag needs a person. */
+export function decide(input: { amountMinor: number; assessment: Assessment; policy: DisputePolicy }): {
+  action: DisputeAction;
+  economics: Economics;
+  reasons: string[];
+} {
+  const { amountMinor, assessment, policy } = input;
+  const economics: Economics = {
+    amountMinor,
+    challengeFeeMinor: policy.challengeFeeMinor,
+    acceptLossMinor: amountMinor,
+    challengeLossMinor: Math.round(policy.challengeFeeMinor + amountMinor * (1 - assessment.winProbability)),
+  };
+  if (assessment.redFlags.length) return { action: "escalate", economics, reasons: assessment.redFlags };
+  if (economics.challengeLossMinor < economics.acceptLossMinor && assessment.strength !== "weak") {
+    return { action: "challenge", economics, reasons: [`${assessment.strength} evidence: challenging costs less in expectation than accepting`] };
+  }
+  const reasons = [
+    assessment.strength === "weak" ? "Evidence is weak" : "Challenging costs more in expectation than accepting",
+  ];
+  if (amountMinor >= policy.humanAcceptFromMinor) {
+    return { action: "escalate", economics, reasons: [...reasons, "Accepting this amount needs a person's sign-off"] };
+  }
+  return { action: "accept", economics, reasons };
+}
