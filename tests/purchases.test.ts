@@ -79,3 +79,26 @@ describe("Kit 02 scenario: annual is cheaper but breaks the reserve in week 7", 
   });
 });
 
+describe("reading vendor terms", () => {
+  it("parses common price phrasings without a model", () => {
+    const parsed = parseTermsWithRules(PARCELWISE_TERMS, "USD");
+    expect(parsed.map((p) => [p.billing, p.chargeAmount])).toEqual([
+      ["monthly", 480],
+      ["annual", 4723.2],
+    ]);
+  });
+
+  it("rejects a price the terms do not contain, even if a model claims it", () => {
+    const { options, rejected } = verifyExtracted(PARCELWISE_TERMS, [
+      ...extractedCorrectly,
+      { label: "Lifetime deal", billing: "one_time", chargeAmount: 99, currency: "USD", commitmentMonths: 0, cancellable: false, quote: "Lifetime access for $99 one-time" },
+      { label: "Monthly misread", billing: "monthly", chargeAmount: 48, currency: "USD", commitmentMonths: 1, cancellable: true, quote: "Monthly plan: $480 per month, cancel anytime." },
+    ]);
+    expect(options).toHaveLength(2);
+    expect(rejected.map((r) => r.reason)).toEqual([
+      "quote does not appear in the vendor terms",
+      "price is not stated in the quoted text",
+    ]);
+  });
+});
+
