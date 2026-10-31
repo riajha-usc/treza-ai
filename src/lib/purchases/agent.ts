@@ -160,3 +160,103 @@ async function ensureCardholder(deps: PurchaseDeps, tenantId: string, tenantName
   return holder.cardholder_id;
 }
 
+/**
+ * Issues the card for an approved purchase. Before any money-moving call it
+ * checks that the approved terms are untouched and that conditions such as
+ * tenant risk have not changed since the decision.
+ */
+export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: string): Promise<PurchaseRow> {
+  const { db } = deps;
+  const req = await getPurchase(db, purchaseId);
+  if (req.status !== "approved") throw new PurchaseError(`Purchase ${purchaseId} is ${req.status}, not approved`);
+  const { chosen, controls } = req.decision;
+  if (!chosen || !controls) throw new PurchaseError(`Purchase ${purchaseId} has no chosen option`);
+
+  const refuse = async (reason: string) => {
+    await update(db, purchaseId, { status: "denied", decision: { ...req.decision, summary: `Not issued: ${reason}` } });
+    await recordDecision(db, {
+      tenantId: req.tenant_id,
+      actor: "system",
+      action: "card.issue_refused",
+      subjectType: "purchase_request",
+      subjectId: purchaseId,
+      outcome: { reason },
+    });
+    return getPurchase(db, purchaseId);
+  };
+
+  // The approval covers exactly these terms, or nothing.
+  const expected = fingerprint(bindingTerms(req, chosen, controls));
+  if (expected !== req.fingerprint) return refuse("the terms changed after the decision");
+  if (req.approval_id) {
+    const [appr] = await db.query<{ payload: { fingerprint?: string }; status: string }>(
+      "SELECT payload, status FROM approvals WHERE id = $1",
+      [req.approval_id],
+    );
+    if (appr?.status !== "approved" || appr.payload.fingerprint !== expected) {
+      return refuse("the approval does not cover these terms");
+    }
+  }
+
+  // Re-check live conditions: a new dispute can change risk after approval.
+  const { outcome } = await runRules(db, req, req.options);
+  if (outcome.verdict === "deny" || outcome.chosen?.id !== chosen.id) {
+    return refuse("conditions changed since approval: " + outcome.results.filter((r) => r.outcome === "fail" || r.outcome === "flag").map((r) => r.detail).join("; "));
+  }
+
+  if (!deps.issuer) {
+    await update(db, purchaseId, {
+      decision: { ...req.decision, issuanceNote: "Approved. The card will be issued once Airwallex credentials are configured." },
+    });
+    return getPurchase(db, purchaseId);
+  }
+
+  const tenant = await tenantInfo(db, req.tenant_id);
+  const onBehalfOf = tenant.airwallex_account_id ?? undefined;
+  try {
+    const cardholderId = await ensureCardholder(deps, req.tenant_id, tenant.name, onBehalfOf);
+    const { result: card } = await onceForOperation(
+      db,
+      { key: `card:${purchaseId}`, tenantId: req.tenant_id, method: "POST", path: "/api/v1/issuing/cards/create" },
+      (requestId) =>
+        deps.issuer!.createCard({
+          requestId,
+          cardholderId,
+          createdBy: req.requester,
+          nickName: `${req.vendor} ${chosen.billing}`,
+          controls,
+          metadata: { tenant_id: req.tenant_id, purchase_request_id: purchaseId },
+          onBehalfOf,
+        }),
+    );
+    await db.query(
+      `INSERT INTO cards (tenant_id, purchase_request_id, airwallex_card_id, status, controls, masked_number)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (airwallex_card_id) DO NOTHING`,
+      [req.tenant_id, purchaseId, card.card_id, card.card_status ?? "PENDING", JSON.stringify(controls), card.card_number ?? null],
+    );
+    await update(db, purchaseId, { status: "card_issued" });
+    await recordDecision(db, {
+      tenantId: req.tenant_id,
+      actor: "system",
+      action: "card.issued",
+      subjectType: "purchase_request",
+      subjectId: purchaseId,
+      inputs: { onBehalfOf: onBehalfOf ?? null },
+      outcome: { cardId: card.card_id, controls },
+    });
+    await emit(db, { key: `card.issued:${card.card_id}`, type: "card.issued", tenantId: req.tenant_id, payload: { purchaseId, cardId: card.card_id } });
+  } catch (err) {
+    const message = err instanceof AirwallexError ? `${err.code}: ${err.message}` : String(err);
+    await update(db, purchaseId, { status: "failed", decision: { ...req.decision, issuanceNote: `Card issuance failed: ${message}` } });
+    await recordDecision(db, {
+      tenantId: req.tenant_id,
+      actor: "system",
+      action: "card.issue_failed",
+      subjectType: "purchase_request",
+      subjectId: purchaseId,
+      outcome: { error: message },
+    });
+  }
+  return getPurchase(db, purchaseId);
+}
+
