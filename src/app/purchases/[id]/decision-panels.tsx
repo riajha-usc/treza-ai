@@ -98,3 +98,31 @@ export function ModelPanel({ d }: { d: PurchaseDetail }) {
   );
 }
 
+export function ApprovalPanel({ d }: { d: PurchaseDetail }) {
+  return (
+    <Panel title="4. Approval">
+      {d.approval ? (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted">{d.approval.reason}</p>
+          {d.approval.status === "pending" ? (
+            <form action={resolvePurchaseAction} className="flex gap-2">
+              <input type="hidden" name="approvalId" value={d.approval.id} />
+              <button name="decision" value="approved" className={`${btn} border-good/50 text-good`}>
+                Approve
+              </button>
+              <button name="decision" value="rejected" className={`${btn} border-bad/50 text-bad`}>
+                Reject
+              </button>
+            </form>
+          ) : (
+            <Chip tone={d.approval.status === "approved" ? "good" : "bad"}>
+              {d.approval.status} by {d.approval.resolved_by}
+            </Chip>
+          )}
+          <p className="text-xs text-muted">The approval is bound to these exact terms and controls by fingerprint.</p>
+        </div>
+      ) : (
+        <Empty>No person needed for this request.</Empty>
+      )}
+    </Panel>  );
+}
