@@ -42,7 +42,9 @@ export async function onceForOperation<T>(
   } catch (err) {
     // A retryable failure leaves the outcome unknown: the request may have
     // landed. It stays retryable with the same request_id, never a new one.
-    const definitive = err instanceof AirwallexError && !err.retryable;
+    // 401 and 403 mean the request was refused before it ran, so a retry
+    // after fixing credentials or permissions is safe too.
+    const definitive = err instanceof AirwallexError && !err.retryable && err.status !== 401 && err.status !== 403;
     await q.query("UPDATE outbound_requests SET status = $2, error = $3, updated_at = now() WHERE op_key = $1", [
       op.key,
       definitive ? "failed" : "unknown",

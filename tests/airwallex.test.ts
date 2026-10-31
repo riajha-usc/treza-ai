@@ -104,6 +104,22 @@ describe("one request_id per operation", () => {
     expect(replay).toMatchObject({ replayed: true, result: { id: "tr_1" } });
   });
 
+  it("allows a retry after a permission error, with the same request_id", async () => {
+    const ids: string[] = [];
+    await expect(
+      onceForOperation(db, op, async (id) => {
+        ids.push(id);
+        throw new AirwallexError(401, "unauthorized", "Insufficient permissions");
+      }),
+    ).rejects.toThrow();
+    await onceForOperation(db, op, async (id) => {
+      ids.push(id);
+      return { id: "tr_1" };
+    });
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+  });
+
   it("does not retry an operation that failed definitively", async () => {
     await expect(
       onceForOperation(db, op, async () => {
