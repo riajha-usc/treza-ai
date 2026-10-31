@@ -156,4 +156,103 @@ CREATE TABLE outbound_requests (
   updated_at timestamptz NOT NULL DEFAULT now()
 )`,
   },
+  {
+    id: "002_purchases_and_cards",
+    sql: `
+-- Spend policy per tenant, validated in code by a zod schema.
+CREATE TABLE tenant_policies (
+  tenant_id text PRIMARY KEY REFERENCES tenants(id),
+  policy jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Risk tier per tenant. Written by the settlement and dispute agents,
+-- read by the purchase agent: this table is one edge of the closed loop.
+CREATE TABLE tenant_risk (
+  tenant_id text PRIMARY KEY REFERENCES tenants(id),
+  tier text NOT NULL DEFAULT 'low' CHECK (tier IN ('low', 'elevated', 'high', 'restricted')),
+  score int NOT NULL DEFAULT 0,
+  reasons jsonb NOT NULL DEFAULT '[]',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Cash the tenant holds now, and what it owes or expects by week.
+CREATE TABLE cash_positions (
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  currency char(3) NOT NULL,
+  balance_minor bigint NOT NULL,
+  source text NOT NULL DEFAULT 'seed' CHECK (source IN ('seed', 'airwallex')),
+  as_of timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, currency)
+);
+
+CREATE TABLE cash_flows (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  week int NOT NULL CHECK (week >= 1),
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  description text NOT NULL
+);
+CREATE INDEX cash_flows_tenant_idx ON cash_flows (tenant_id, week);
+
+CREATE TABLE cardholders (
+  tenant_id text PRIMARY KEY REFERENCES tenants(id),
+  airwallex_cardholder_id text NOT NULL UNIQUE,
+  status text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE purchase_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  requester text NOT NULL,
+  vendor text NOT NULL,
+  merchant_category_code char(4) NOT NULL,
+  purpose text NOT NULL,
+  terms_text text NOT NULL,
+  currency char(3) NOT NULL,
+  options jsonb NOT NULL DEFAULT '[]',
+  analysis jsonb NOT NULL DEFAULT '{}',
+  decision jsonb NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'received' CHECK (status IN
+    ('received', 'pending_approval', 'approved', 'denied', 'card_issued', 'failed')),
+  fingerprint text,
+  approval_id uuid REFERENCES approvals(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX purchase_requests_tenant_idx ON purchase_requests (tenant_id, created_at DESC);
+
+CREATE TABLE cards (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  purchase_request_id uuid REFERENCES purchase_requests(id),
+  airwallex_card_id text NOT NULL UNIQUE,
+  status text NOT NULL,
+  controls jsonb NOT NULL,
+  masked_number text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX cards_tenant_idx ON cards (tenant_id);
+
+CREATE TABLE card_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  card_id uuid REFERENCES cards(id),
+  airwallex_card_id text NOT NULL,
+  airwallex_transaction_id text NOT NULL UNIQUE,
+  kind text NOT NULL,
+  outcome text NOT NULL CHECK (outcome IN ('accepted', 'declined', 'pending', 'reversed', 'refunded')),
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  merchant_category_code text,
+  merchant_name text,
+  failure_reason text,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  raw jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX card_transactions_card_idx ON card_transactions (card_id, occurred_at)`,
+  },
 ];
