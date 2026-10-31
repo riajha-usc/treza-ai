@@ -97,3 +97,66 @@ export async function getPurchase(q: Queryable, id: string): Promise<PurchaseRow
   return row;
 }
 
+async function activeVendors(q: Queryable, tenantId: string, excludeId?: string): Promise<string[]> {
+  const rows = await q.query<{ vendor: string }>(
+    `SELECT DISTINCT pr.vendor FROM cards c JOIN purchase_requests pr ON pr.id = c.purchase_request_id
+     WHERE c.tenant_id = $1 AND c.status IN ('ACTIVE', 'PENDING') AND pr.id <> COALESCE($2::uuid, '00000000-0000-0000-0000-000000000000')`,
+    [tenantId, excludeId ?? null],
+  );
+  return rows.map((r) => r.vendor);
+}
+
+/** Runs the rules against the tenant's current policy, risk and cash. */
+async function runRules(q: Queryable, req: Pick<PurchaseRow, "id" | "tenant_id" | "vendor" | "merchant_category_code" | "purpose" | "currency">, options: PurchaseOption[]) {
+  const policy = await loadPolicy(q, req.tenant_id);
+  if (!policy) throw new PurchaseError(`Tenant ${req.tenant_id} has no spend policy`);
+  const [risk, cash, vendors] = await Promise.all([
+    loadRiskTier(q, req.tenant_id),
+    loadCash(q, req.tenant_id, req.currency),
+    activeVendors(q, req.tenant_id, req.id),
+  ]);
+  const outcome = evaluateRules({
+    vendor: req.vendor,
+    merchantCategoryCode: req.merchant_category_code,
+    purpose: req.purpose,
+    options,
+    policy,
+    risk,
+    cash,
+    activeVendors: vendors,
+  });
+  return { policy, risk, outcome };
+}
+
+function bindingTerms(req: Pick<PurchaseRow, "tenant_id" | "vendor" | "merchant_category_code">, chosen: PurchaseOption, controls: CardControls) {
+  return { tenantId: req.tenant_id, vendor: req.vendor, mcc: req.merchant_category_code, option: chosen, controls };
+}
+
+async function ensureCardholder(deps: PurchaseDeps, tenantId: string, tenantName: string, onBehalfOf?: string): Promise<string> {
+  const { db } = deps;
+  const [existing] = await db.query<{ airwallex_cardholder_id: string }>(
+    "SELECT airwallex_cardholder_id FROM cardholders WHERE tenant_id = $1",
+    [tenantId],
+  );
+  if (existing) return existing.airwallex_cardholder_id;
+  const holder = await deps.issuer!.createCardholder({
+    email: `cards+${tenantId}@example.com`,
+    firstName: tenantName.split(" ")[0] ?? "Treza",
+    lastName: "Delegate",
+    onBehalfOf,
+  });
+  // Cardholders reach READY within seconds without any approval call.
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  let status = holder.status;
+  for (let i = 0; i < 10 && status !== "READY"; i++) {
+    await sleep(1000);
+    status = (await deps.issuer!.getCardholder(holder.cardholder_id, onBehalfOf)).status;
+  }
+  await db.query(
+    `INSERT INTO cardholders (tenant_id, airwallex_cardholder_id, status) VALUES ($1, $2, $3)
+     ON CONFLICT (tenant_id) DO NOTHING`,
+    [tenantId, holder.cardholder_id, status],
+  );
+  return holder.cardholder_id;
+}
+
