@@ -77,6 +77,83 @@ CREATE TRIGGER journal_entries_append_only BEFORE UPDATE OR DELETE ON journal_en
   FOR EACH ROW EXECUTE FUNCTION reject_mutation();
 CREATE TRIGGER postings_append_only BEFORE UPDATE OR DELETE ON postings
   FOR EACH ROW EXECUTE FUNCTION reject_mutation();
-`,
+
+-- Shared event ledger: inbound webhooks and internal domain events.
+-- (source, external_id) is unique, which is what deduplicates webhooks.
+CREATE TABLE events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source text NOT NULL CHECK (source IN ('airwallex', 'treza')),
+  external_id text NOT NULL,
+  type text NOT NULL,
+  tenant_id text REFERENCES tenants(id),
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'received'
+    CHECK (status IN ('received', 'processed', 'failed', 'ignored')),
+  attempts int NOT NULL DEFAULT 0,
+  error text,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  received_at timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz,
+  UNIQUE (source, external_id)
+);
+CREATE INDEX events_status_idx ON events (status, occurred_at);
+CREATE INDEX events_tenant_idx ON events (tenant_id, occurred_at);
+
+-- Audit trail: every decision, by rules, model, human or system.
+CREATE TABLE audit_log (
+  id bigserial PRIMARY KEY,
+  tenant_id text REFERENCES tenants(id),
+  actor text NOT NULL CHECK (actor IN ('rules', 'model', 'human', 'system')),
+  action text NOT NULL,
+  subject_type text NOT NULL,
+  subject_id text NOT NULL,
+  inputs jsonb NOT NULL DEFAULT '{}',
+  model text,
+  prompt_version text,
+  reasoning_summary text,
+  outcome jsonb NOT NULL DEFAULT '{}',
+  latency_ms int,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX audit_subject_idx ON audit_log (subject_type, subject_id);
+CREATE INDEX audit_tenant_idx ON audit_log (tenant_id, created_at);
+CREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE ON audit_log
+  FOR EACH ROW EXECUTE FUNCTION reject_mutation();
+
+-- Human approval queue for actions above configured thresholds.
+CREATE TABLE approvals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  kind text NOT NULL,
+  subject_type text NOT NULL,
+  subject_id text NOT NULL,
+  amount_minor bigint,
+  currency char(3),
+  reason text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz,
+  resolved_by text,
+  resolution_note text
+);
+CREATE UNIQUE INDEX approvals_one_pending ON approvals (kind, subject_type, subject_id)
+  WHERE status = 'pending';
+
+-- Outbound money-moving calls. One logical operation maps to one request_id
+-- forever, so a retry can never become a second payment.
+CREATE TABLE outbound_requests (
+  op_key text PRIMARY KEY,
+  request_id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  tenant_id text REFERENCES tenants(id),
+  method text NOT NULL,
+  path text NOT NULL,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'succeeded', 'failed', 'unknown')),
+  response jsonb,
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+)`,
   },
 ];
