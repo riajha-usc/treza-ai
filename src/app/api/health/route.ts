@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   let airwallexAuth: "ok" | "not_configured" | string = airwallex ? "unchecked" : "not_configured";
   if (airwallex && new URL(request.url).searchParams.get("check") === "airwallex") {
     try {
-      await airwallex.request("GET", "/api/v1/global_accounts", { query: { page_size: 1 } });
+      await airwallex.request("GET", "/api/v1/global_accounts", { query: { page_size: 10 } });
       airwallexAuth = "ok";
     } catch (err) {
       airwallexAuth = err instanceof Error ? err.message : "failed";

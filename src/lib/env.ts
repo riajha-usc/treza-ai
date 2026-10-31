@@ -1,20 +1,24 @@
 import { z } from "zod";
 
+/** A blank value such as DATABASE_URL= in an env file means "not set". */
+const optional = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema.optional());
+
 /**
  * Runtime configuration. Every integration is optional at boot so the app
  * can start, seed and show a setup checklist before keys are added.
  */
 const EnvSchema = z.object({
-  DATABASE_URL: z.string().url().optional(),
+  DATABASE_URL: optional(z.string().url()),
   PGLITE_DIR: z.string().default(".data/treza"),
 
   AIRWALLEX_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
-  AIRWALLEX_CLIENT_ID: z.string().min(1).optional(),
-  AIRWALLEX_API_KEY: z.string().min(1).optional(),
-  AIRWALLEX_WEBHOOK_SECRET: z.string().min(1).optional(),
+  AIRWALLEX_CLIENT_ID: optional(z.string().min(1)),
+  AIRWALLEX_API_KEY: optional(z.string().min(1)),
+  AIRWALLEX_WEBHOOK_SECRET: optional(z.string().min(1)),
 
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  AWS_REGION: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: optional(z.string().min(1)),
+  AWS_REGION: optional(z.string().min(1)),
   BEDROCK_ENABLED: z
     .enum(["true", "false"])
     .default("false")
