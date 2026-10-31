@@ -89,3 +89,15 @@ export function CardPanel({ d }: { d: PurchaseDetail }) {
   );
 }
 
+function ChargeButton(p: { purchaseId: string; cardId: string; amountMinor: number; mcc: string; label: string; text: string }) {
+  return (
+    <form action={simulateChargeAction}>
+      <input type="hidden" name="purchaseId" value={p.purchaseId} />
+      <input type="hidden" name="cardId" value={p.cardId} />
+      <input type="hidden" name="amountMinor" value={p.amountMinor} />
+      <input type="hidden" name="mcc" value={p.mcc} />
+      <input type="hidden" name="label" value={p.label} />
+      <button className={`${btn} border-accent-line/60 text-accent-text`}>{p.text}</button>
+    </form>
+  );
+}
