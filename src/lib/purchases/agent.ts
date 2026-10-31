@@ -260,3 +260,72 @@ export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: strin
   return getPurchase(db, purchaseId);
 }
 
+/** Step 1: read the options from the vendor terms, verified against the text. */
+async function readOptions(deps: PurchaseDeps, id: string, input: PurchaseInput) {
+  if (input.options) {
+    return { options: input.options, extraction: { source: "provided" as const, rejected: [] } };
+  }
+  let extracted = null;
+  let source: "claude" | "rules" = "rules";
+  if (deps.model) {
+    const res = await deps.model.extractOptions({ vendor: input.vendor, termsText: input.termsText, currency: input.currency });
+    await recordDecision(deps.db, {
+      tenantId: input.tenantId,
+      actor: "model",
+      action: "purchase.terms_read",
+      subjectType: "purchase_request",
+      subjectId: id,
+      model: res.model,
+      promptVersion: res.promptVersion,
+      latencyMs: res.latencyMs,
+      outcome: res.ok ? { options: res.value.length } : { failed: res.reason, detail: res.detail },
+    });
+    if (res.ok) {
+      extracted = res.value;
+      source = "claude";
+    }
+  }
+  extracted ??= parseTermsWithRules(input.termsText, input.currency);
+  const verified = verifyExtracted(input.termsText, extracted);
+  return { options: verified.options, extraction: { source, rejected: verified.rejected } };
+}
+
+/** Step 3: the model weighs only what the rules flagged. */
+async function reviewWithModel(
+  deps: PurchaseDeps,
+  id: string,
+  input: PurchaseInput,
+  ctx: { tenantName: string; chosen: PurchaseOption; riskTier: string; rules: RulesOutcome["results"] },
+): Promise<{ verdict?: "approve" | "deny"; needsHuman: boolean; assessment: Assessment | null; issue: string | null }> {
+  if (!deps.model) {
+    return { needsHuman: true, assessment: null, issue: "Claude is not configured, so a person reviews this request." };
+  }
+  const res = await deps.model.assess({
+    tenantName: ctx.tenantName,
+    vendor: input.vendor,
+    merchantCategory: `${input.merchantCategoryCode} ${categoryName(input.merchantCategoryCode)}`,
+    purpose: input.purpose,
+    chosenOption: ctx.chosen.label,
+    firstChargeMajor: format(ctx.chosen.chargeMinor, ctx.chosen.currency),
+    riskTier: ctx.riskTier,
+    rules: ctx.rules,
+  });
+  await recordDecision(deps.db, {
+    tenantId: input.tenantId,
+    actor: "model",
+    action: "purchase.assessed",
+    subjectType: "purchase_request",
+    subjectId: id,
+    model: res.model,
+    promptVersion: res.promptVersion,
+    latencyMs: res.latencyMs,
+    reasoningSummary: res.ok ? res.value.summary : null,
+    outcome: res.ok ? { ...res.value } : { failed: res.reason, detail: res.detail },
+  });
+  if (!res.ok) return { needsHuman: true, assessment: null, issue: `Model ${res.reason}: a person reviews instead.` };
+  const a = res.value;
+  if (a.recommendation === "deny" && a.confidence === "high") return { verdict: "deny", needsHuman: false, assessment: a, issue: null };
+  if (a.recommendation === "approve" && a.confidence !== "low") return { verdict: "approve", needsHuman: false, assessment: a, issue: null };
+  return { needsHuman: true, assessment: a, issue: null };
+}
+
