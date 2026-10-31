@@ -72,3 +72,68 @@ describe("Airwallex client", () => {
   });
 });
 
+describe("one request_id per operation", () => {
+  let db: Db;
+  beforeEach(async () => {
+    db = await testDb();
+  });
+
+  const op = { key: "payout:seller_a:2026-10-26", method: "POST", path: "/api/v1/connected_account_transfers/create" };
+
+  it("reuses the same request_id after an ambiguous failure", async () => {
+    const ids: string[] = [];
+    await expect(
+      onceForOperation(db, op, async (id) => {
+        ids.push(id);
+        throw new AirwallexError(0, "network_error", "socket hang up");
+      }),
+    ).rejects.toThrow();
+    await onceForOperation(db, op, async (id) => {
+      ids.push(id);
+      return { id: "tr_1" };
+    });
+    expect(ids[0]).toBe(ids[1]);
+  });
+
+  it("never calls Airwallex again once the operation succeeded", async () => {
+    let calls = 0;
+    const run = () => onceForOperation(db, op, async () => ({ id: `tr_${++calls}` }));
+    await run();
+    const replay = await run();
+    expect(calls).toBe(1);
+    expect(replay).toMatchObject({ replayed: true, result: { id: "tr_1" } });
+  });
+
+  it("does not retry an operation that failed definitively", async () => {
+    await expect(
+      onceForOperation(db, op, async () => {
+        throw new AirwallexError(400, "insufficient_fund", "no funds");
+      }),
+    ).rejects.toThrow();
+    await expect(onceForOperation(db, op, async () => ({}))).rejects.toThrow(/already failed/);
+  });
+});
+
+describe("webhook signatures", () => {
+  const secret = "whsec_test";
+  const body = '{"id":"evt_1","name":"deposit.settled","data":{"object":{}}}';
+  const now = 1_761_500_000_000;
+  const ts = String(now);
+
+  it("accepts a correctly signed body", () => {
+    const signature = signForTests(secret, ts, body);
+    expect(verifyAirwallexSignature({ rawBody: body, timestamp: ts, signature, secret, now })).toEqual({ ok: true });
+  });
+
+  it("rejects a tampered body", () => {
+    const signature = signForTests(secret, ts, body);
+    const res = verifyAirwallexSignature({ rawBody: body.replace("evt_1", "evt_2"), timestamp: ts, signature, secret, now });
+    expect(res).toEqual({ ok: false, reason: "signature mismatch" });
+  });
+
+  it("rejects a replayed delivery outside the time window", () => {
+    const signature = signForTests(secret, ts, body);
+    const res = verifyAirwallexSignature({ rawBody: body, timestamp: ts, signature, secret, now: now + 10 * 60_000 });
+    expect(res).toEqual({ ok: false, reason: "timestamp outside tolerance" });
+  });
+});
