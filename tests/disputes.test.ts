@@ -63,3 +63,72 @@ describe("Kit 04: three disputes, three different decisions", () => {
   });
 });
 
+describe("evidence integrity", () => {
+  it("drops a fact whose quote is not in the cited document", async () => {
+    const madeUp = { code: "refund_issued" as const, source: "doc_1103_support", quote: "We issued your refund on Oct 20" };
+    await stageDemoDisputes(deps(new FakeDisputeModel([madeUp])));
+    const refund = await byOrder("ord_1103");
+    expect(refund.decision.facts.some((f) => f.code === "refund_issued")).toBe(false);
+    expect(refund.decision.rejectedFacts).toEqual([{ code: "refund_issued", reason: "quote not found in the cited document" }]);
+  });
+
+  it("after the issuer rejects, asks the seller for more and sends only new evidence", async () => {
+    await stageDemoDisputes(deps());
+    const fraud = await byOrder("ord_1042");
+    await simulateIssuerRejection(deps(), fraud.id);
+    const after = await byOrder("ord_1042");
+    expect(after.stage).toBe("CHARGEBACK");
+    expect(after.decision.sellerEvidenceRequested).toEqual(["doc_1042_chat"]);
+    expect(after.decision.evidenceDocIds).toEqual(["doc_1042_chat"]);
+    const subs = await db.query<{ document_ids: string[]; evidence_hash: string }>(
+      "SELECT document_ids, evidence_hash FROM dispute_submissions WHERE dispute_id = $1 ORDER BY created_at",
+      [fraud.id],
+    );
+    expect(subs).toHaveLength(2);
+    expect(subs[0].evidence_hash).not.toBe(subs[1].evidence_hash);
+    expect(subs[0].document_ids).not.toContain("doc_1042_chat");
+  });
+
+  it("never resends old evidence: with nothing new, a large case goes to a person", async () => {
+    await stageDemoDisputes(deps());
+    await db.query("DELETE FROM order_documents WHERE id = 'doc_1042_chat'");
+    const fraud = await byOrder("ord_1042");
+    await simulateIssuerRejection(deps(), fraud.id);
+    const after = await byOrder("ord_1042");
+    expect(after.decision.action).toBe("escalate");
+    expect(after.decision.reasons[0]).toMatch(/no new evidence/);
+    expect(aw.challenges).toHaveLength(1);
+  });
+
+  it("without a model, still wins on structured records but sends unread documents to a person", async () => {
+    await stageDemoDisputes(deps(null));
+    expect((await byOrder("ord_1042")).decision.action).toBe("challenge");
+    expect((await byOrder("ord_1077")).decision.action).toBe("escalate");
+  });
+});
+
+describe("closed loop", () => {
+  it("raises seller risk on each dispute, which then tightens that seller's purchases", async () => {
+    await stageDemoDisputes(deps());
+    expect((await loadRiskTier(db, "seller_harbor")).tier).toBe("elevated");
+    const kestrel = await loadRiskTier(db, "seller_kestrel");
+    expect(kestrel.tier).toBe("high");
+    expect(kestrel.reasons.at(-1)).toMatch(/13\.6/);
+
+    const row = await submitPurchase(
+      { db, model: null, issuer: null, simulator: null },
+      { tenantId: "seller_kestrel", requester: "Ava", vendor: "Parcelwise", merchantCategoryCode: "5734", purpose: "Shipping label software for marketplace orders", termsText: PARCELWISE_TERMS, currency: "USD" },
+    );
+    expect(row.status).toBe("pending_approval");
+    expect(row.decision.rules?.results.find((r) => r.code === "tenant_risk")?.detail).toMatch(/high/);
+  });
+
+  it("counts each dispute toward risk only once, however often it syncs", async () => {
+    await stageDemoDisputes(deps());
+    const before = await loadRiskTier(db, "seller_harbor");
+    await processDisputes(deps());
+    await processDisputes(deps());
+    expect((await loadRiskTier(db, "seller_harbor")).reasons).toEqual(before.reasons);
+    expect((await getDispute(db, (await byOrder("ord_1042")).id)).status).toBe("CHALLENGED");
+  });
+});
