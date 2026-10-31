@@ -329,3 +329,103 @@ async function reviewWithModel(
   return { needsHuman: true, assessment: a, issue: null };
 }
 
+/**
+ * Takes one purchase request through every tier: read the terms, apply the
+ * rules, ask the model only about what rules cannot settle, then route to a
+ * person or issue a card whose controls enforce the decision.
+ */
+export async function submitPurchase(deps: PurchaseDeps, input: PurchaseInput): Promise<PurchaseRow> {
+  const { db } = deps;
+  const now = deps.now ?? (() => new Date());
+  const tenant = await tenantInfo(db, input.tenantId);
+  const [{ id }] = await db.query<{ id: string }>(
+    `INSERT INTO purchase_requests (tenant_id, requester, vendor, merchant_category_code, purpose, terms_text, currency)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [input.tenantId, input.requester, input.vendor, input.merchantCategoryCode, input.purpose, input.termsText, input.currency],
+  );
+  await recordDecision(db, {
+    tenantId: input.tenantId,
+    actor: "system",
+    action: "purchase.received",
+    subjectType: "purchase_request",
+    subjectId: id,
+    inputs: { requester: input.requester, vendor: input.vendor, mcc: input.merchantCategoryCode },
+  });
+
+  const { options, extraction } = await readOptions(deps, id, input);
+  if (options.length === 0) {
+    await update(db, id, { status: "failed", decision: { summary: "No price could be read from the vendor terms.", extraction } });
+    return getPurchase(db, id);
+  }
+  await update(db, id, { options });
+
+  // Step 2: deterministic rules.
+  const req = { id, tenant_id: input.tenantId, vendor: input.vendor, merchant_category_code: input.merchantCategoryCode, purpose: input.purpose, currency: input.currency };
+  const { policy, risk, outcome } = await runRules(db, req, options);
+  await recordDecision(db, {
+    tenantId: input.tenantId,
+    actor: "rules",
+    action: `purchase.rules_${outcome.verdict}`,
+    subjectType: "purchase_request",
+    subjectId: id,
+    inputs: { riskTier: risk.tier, options: options.map((o) => o.id) },
+    outcome: { verdict: outcome.verdict, chosen: outcome.chosen?.id ?? null, results: outcome.results },
+  });
+
+  let verdict: "approve" | "deny" | "review" = outcome.verdict;
+  let needsHuman = outcome.needsHuman;
+  let review: Awaited<ReturnType<typeof reviewWithModel>> | null = null;
+  if (verdict === "review" && outcome.chosen) {
+    review = await reviewWithModel(deps, id, input, { tenantName: tenant.name, chosen: outcome.chosen, riskTier: risk.tier, rules: outcome.results });
+    if (review.verdict) verdict = review.verdict;
+    needsHuman = needsHuman || review.needsHuman;
+  }
+
+  const { verdict: rulesVerdict, results, projections, deferred } = outcome;
+  const decision: PurchaseDecision = {
+    summary: "",
+    extraction,
+    rules: { verdict: rulesVerdict, results, projections, deferred, needsHuman: outcome.needsHuman },
+    chosen: outcome.chosen,
+    assessment: review?.assessment ?? null,
+    assessmentIssue: review?.issue ?? null,
+    issuedFor: tenant.airwallex_account_id ? "connected_account" : "platform_account",
+  };
+
+  if (verdict === "deny" || !outcome.chosen) {
+    decision.summary = review?.assessment && verdict === "deny" ? `Denied: ${review.assessment.summary}` : "Denied by policy rules.";
+    await update(db, id, { status: "denied", decision });
+    await emit(db, { key: `purchase.decided:${id}`, type: "purchase.denied", tenantId: input.tenantId, payload: { purchaseId: id } });
+    return getPurchase(db, id);
+  }
+
+  // Step 4: code turns the decision into card controls and binds them.
+  const chosen = outcome.chosen;
+  const controls = buildCardControls({ option: chosen, merchantCategoryCode: input.merchantCategoryCode, reconsiderAfterDays: policy.reconsiderAfterDays, now: now() });
+  decision.controls = controls;
+  const fp = fingerprint(bindingTerms(req, chosen, controls));
+  const price = `${chosen.label} at ${format(chosen.chargeMinor, chosen.currency)}`;
+
+  if (needsHuman) {
+    decision.summary = `${price} needs a person's approval.`;
+    const { approvalId } = await requestApproval(db, {
+      tenantId: input.tenantId,
+      kind: "purchase",
+      subjectType: "purchase_request",
+      subjectId: id,
+      amountMinor: chosen.chargeMinor,
+      currency: chosen.currency,
+      reason: review?.issue ?? review?.assessment?.summary ?? "Above the human approval threshold or risk requires review",
+      payload: { fingerprint: fp, vendor: input.vendor, option: chosen.label },
+    });
+    await update(db, id, { status: "pending_approval", decision, fingerprint: fp, approval_id: approvalId });
+    await emit(db, { key: `purchase.decided:${id}`, type: "purchase.pending_approval", tenantId: input.tenantId, payload: { purchaseId: id } });
+    return getPurchase(db, id);
+  }
+
+  decision.summary = `Approved ${price}.`;
+  await update(db, id, { status: "approved", decision, fingerprint: fp });
+  await emit(db, { key: `purchase.decided:${id}`, type: "purchase.approved", tenantId: input.tenantId, payload: { purchaseId: id } });
+  return issueCardForPurchase(deps, id);
+}
+
