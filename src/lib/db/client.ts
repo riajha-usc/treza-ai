@@ -97,3 +97,9 @@ export function getDb(): Promise<Db> {
   return globalForDb.trezaDb;
 }
 
+/** Fresh in-memory database with the full schema, for tests. */
+export async function testDb(): Promise<Db> {
+  const db = pgliteDb();
+  await migrate(db);
+  return db;
+}
