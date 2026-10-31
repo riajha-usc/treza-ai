@@ -4,7 +4,7 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Status: Phase 1 (foundation) complete. The agents arrive in Phases 2 to 5.
+> Status: Phase 2 (purchase agent) built. Settlement and dispute agents arrive next.
 
 ## Quickstart
 
@@ -34,6 +34,16 @@ npm run typecheck # TypeScript
 | Never pay twice | Each money-moving operation gets one Airwallex request_id, stored before the call and reused on every retry. |
 | Audit trail | Every decision by rules, a model, a person or the system is recorded with its inputs and outcome. |
 | Approval queue | One pending approval per subject. Human decisions are written to the audit trail. |
+
+## Purchase agent (Kits 02 and 05)
+
+Open `/purchases`, choose **Load example** and submit. The demo marketplace is seeded on first boot.
+
+1. **Terms read.** Claude Sonnet 5.5 reads the vendor quote, or a rules parser when no Claude key is set. Every price must appear verbatim in the vendor text, or it is rejected.
+2. **Rules.** Currency, blocked vendors, merchant category, tenant risk, and a 12-week cash projection per option against the reserve floor. The cheapest option that keeps cash above the floor wins.
+3. **Model review.** Claude weighs only what the rules flag, such as purpose and amount above the auto-approval limit. It never sets an amount or a limit. A refusal or outage routes to a person.
+4. **Approval.** Above the threshold, a person approves. The approval is bound by fingerprint to the exact terms and card controls, and live conditions such as tenant risk are re-checked before issuing.
+5. **Card.** A virtual card is issued on behalf of the tenant's connected account, with per-transaction, monthly and total limits, a merchant category lock and an expiry. Sandbox buttons show the monthly charge clearing while the annual price and a restaurant decline.
 
 ## Endpoints
 
