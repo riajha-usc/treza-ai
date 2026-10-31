@@ -98,3 +98,17 @@ export async function structuredFacts(q: Queryable, o: OrderRow): Promise<Fact[]
   return facts;
 }
 
+export function orderSummary(o: OrderRow): string[] {
+  return [
+    `Buyer: ${o.buyer_name} <${o.buyer_email}>`,
+    `Amount: ${format(o.amount_minor, o.currency)}  |  Channel: ${o.channel}`,
+    `Billing: ${o.billing_address}`,
+    `Shipping: ${o.shipping_address}`,
+  ];
+}
+
+/** Identifies a set of evidence, so the same set is never submitted twice. */
+export function evidenceHash(documentIds: string[], facts: Fact[]): string {
+  const key = JSON.stringify({ d: [...documentIds].sort(), f: facts.map((f) => `${f.code}:${f.source}`).sort() });
+  return createHash("sha256").update(key).digest("hex");
+}
