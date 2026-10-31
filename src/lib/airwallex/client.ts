@@ -42,3 +42,101 @@ export interface RequestOptions {
 /** Re-login this long before the 30 minute token actually expires. */
 const TOKEN_SAFETY_MS = 60_000;
 
+export class AirwallexClient {
+  private token?: { value: string; expiresAt: number };
+  private readonly fetchFn: FetchFn;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+
+  constructor(private readonly cfg: AirwallexConfig) {
+    this.fetchFn = cfg.fetch ?? fetch;
+    this.sleep = cfg.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.now = cfg.now ?? Date.now;
+  }
+
+  private async login(): Promise<string> {
+    const res = await this.fetchFn(`${this.cfg.apiBase}/api/v1/authentication/login`, {
+      method: "POST",
+      headers: { "x-client-id": this.cfg.clientId, "x-api-key": this.cfg.apiKey },
+    });
+    const body = await parseBody(res);
+    if (!res.ok) throw toError(res.status, body);
+    const { token, expires_at } = body as { token: string; expires_at: string };
+    // expires_at looks like 2021-06-18T16:30:00+0000; normalise the offset for Date.parse.
+    const parsed = Date.parse(expires_at.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+    const expiresAt = Number.isFinite(parsed) ? parsed : this.now() + 30 * 60_000;
+    this.token = { value: token, expiresAt };
+    return token;
+  }
+
+  private async bearer(force = false): Promise<string> {
+    if (!force && this.token && this.token.expiresAt - TOKEN_SAFETY_MS > this.now()) return this.token.value;
+    return this.login();
+  }
+
+  async request<T>(method: "GET" | "POST", path: string, opts: RequestOptions = {}): Promise<T> {
+    const url = new URL(`${this.cfg.apiBase}${path}`);
+    for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
+    const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
+    return this.send<T>(url.toString(), method, payload, { "content-type": "application/json" }, opts.onBehalfOf);
+  }
+
+  /** Uploads a dispute evidence file to the files host. Returns the file_id. */
+  async uploadFile(file: Blob, filename: string, notes?: string): Promise<{ file_id: string }> {
+    const form = new FormData();
+    form.set("file", file, filename);
+    if (notes) form.set("notes", notes.slice(0, 50));
+    return this.send(`${this.cfg.filesBase}/api/v1/files/upload`, "POST", form, {});
+  }
+
+  private async send<T>(
+    url: string,
+    method: string,
+    body: BodyInit | undefined,
+    headers: Record<string, string>,
+    onBehalfOf?: string,
+  ): Promise<T> {
+    const maxRetries = this.cfg.maxRetries ?? 2;
+    let refreshed = false;
+    for (let attempt = 0; ; attempt++) {
+      const token = await this.bearer();
+      let res: Response;
+      try {
+        res = await this.fetchFn(url, {
+          method,
+          body,
+          headers: {
+            ...headers,
+            authorization: `Bearer ${token}`,
+            ...(onBehalfOf ? { "x-on-behalf-of": onBehalfOf } : {}),
+          },
+        });
+      } catch (err) {
+        const netErr = new AirwallexError(0, "network_error", err instanceof Error ? err.message : String(err));
+        if (attempt < maxRetries) {
+          await this.sleep(backoff(attempt));
+          continue;
+        }
+        throw netErr;
+      }
+      const parsed = await parseBody(res);
+      if (res.ok) return parsed as T;
+      const error = toError(res.status, parsed);
+      if (res.status === 401 && !refreshed) {
+        refreshed = true;
+        await this.bearer(true);
+        continue;
+      }
+      if (error.retryable && attempt < maxRetries) {
+        await this.sleep(backoff(attempt));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+function backoff(attempt: number) {
+  return 250 * 2 ** attempt;
+}
+
