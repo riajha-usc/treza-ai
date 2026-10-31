@@ -4,7 +4,7 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Status: Phase 2 (purchase agent) built. Settlement and dispute agents arrive next.
+> Status: Phases 1 to 3 built: foundation, purchase agent, dispute agent. The settlement agent arrives next.
 
 ## Quickstart
 
@@ -44,6 +44,23 @@ Open `/purchases`, choose **Load example** and submit. The demo marketplace is s
 3. **Model review.** Claude weighs only what the rules flag, such as purpose and amount above the auto-approval limit. It never sets an amount or a limit. A refusal or outage routes to a person.
 4. **Approval.** Above the threshold, a person approves. The approval is bound by fingerprint to the exact terms and card controls, and live conditions such as tenant risk are re-checked before issuing.
 5. **Card.** A virtual card is issued on behalf of the tenant's connected account, with per-transaction, monthly and total limits, a merchant category lock and an expiry. Sandbox buttons show the monthly charge clearing while the annual price and a restaurant decline.
+
+## Dispute agent (Kit 04)
+
+Open `/disputes` and choose **Stage demo disputes**. Treza pays for three demo orders in your Airwallex sandbox with the test card, opens a dispute on each, and decides:
+
+| Case | Evidence | Decision |
+|---|---|---|
+| $1,240 fraud claim, reason 10.4 | Three earlier undisputed orders from the same device and IP, and a signed delivery | Challenge with an evidence PDF |
+| $18 not-received claim, reason 13.1 | Mailbox scan with no signature; the challenge fee exceeds the amount | Accept |
+| $86 refund claim, reason 13.6 | The customer emailed support twice with no reply | A person decides |
+
+- **Facts need a source.** Code derives facts from order records. Claude Opus 5.5 finds facts in documents and must quote them word for word; any quote not found in the cited document is rejected.
+- **Code decides.** Evidence is scored per Visa reason code, and Treza challenges only when the fee plus the expected loss beats accepting.
+- **Never the same evidence twice.** After an issuer rejection, Treza asks the seller for more records and sends only new documents.
+- **Closed loop.** Each dispute raises the seller's risk once, which tightens that seller's card purchases.
+
+Run it from the command line with `node --env-file=.env --import tsx scripts/stage-disputes.mts`.
 
 ## Endpoints
 
