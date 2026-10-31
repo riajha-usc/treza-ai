@@ -86,3 +86,33 @@ export async function emit(
   return insertEvent(q, "treza", { externalId: e.key, type: e.type, tenantId: e.tenantId, payload: e.payload });
 }
 
+async function insertEvent(
+  q: Queryable,
+  source: "airwallex" | "treza",
+  e: { externalId: string; type: string; tenantId?: string | null; payload: unknown; occurredAt?: string },
+): Promise<{ eventId: string; duplicate: boolean }> {
+  const rows = await q.query<{ id: string }>(
+    `INSERT INTO events (source, external_id, type, tenant_id, payload, occurred_at)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()))
+     ON CONFLICT (source, external_id) DO NOTHING RETURNING id`,
+    [source, e.externalId, e.type, e.tenantId ?? null, JSON.stringify(e.payload ?? {}), e.occurredAt ?? null],
+  );
+  if (rows.length > 0) return { eventId: rows[0].id, duplicate: false };
+  const existing = await q.query<{ id: string }>("SELECT id FROM events WHERE source = $1 AND external_id = $2", [
+    source,
+    e.externalId,
+  ]);
+  return { eventId: existing[0].id, duplicate: true };
+}
+
+export async function listEvents(
+  q: Queryable,
+  filter: { tenantId?: string; limit?: number } = {},
+): Promise<EventRow[]> {
+  const limit = Math.min(filter.limit ?? 50, 500);
+  return filter.tenantId
+    ? q.query<EventRow>(`SELECT * FROM events WHERE tenant_id = $1 ORDER BY occurred_at DESC LIMIT ${limit}`, [
+        filter.tenantId,
+      ])
+    : q.query<EventRow>(`SELECT * FROM events ORDER BY occurred_at DESC LIMIT ${limit}`);
+}
