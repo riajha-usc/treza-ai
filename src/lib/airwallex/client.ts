@@ -140,3 +140,29 @@ function backoff(attempt: number) {
   return 250 * 2 ** attempt;
 }
 
+async function parseBody(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
+function toError(status: number, body: unknown): AirwallexError {
+  const b = (body ?? {}) as { code?: string; message?: string; source?: string; details?: Record<string, unknown> };
+  return new AirwallexError(status, b.code ?? "unknown_error", b.message ?? "Request failed", b.source, b.details);
+}
+
+/** Returns a client when credentials are configured, otherwise null. */
+export function airwallexFromEnv(e: Env = env()): AirwallexClient | null {
+  if (!e.AIRWALLEX_CLIENT_ID || !e.AIRWALLEX_API_KEY) return null;
+  const bases = airwallexBaseUrls(e);
+  return new AirwallexClient({
+    clientId: e.AIRWALLEX_CLIENT_ID,
+    apiKey: e.AIRWALLEX_API_KEY,
+    apiBase: bases.api,
+    filesBase: bases.files,
+  });
+}
