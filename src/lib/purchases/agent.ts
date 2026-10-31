@@ -429,3 +429,98 @@ export async function submitPurchase(deps: PurchaseDeps, input: PurchaseInput): 
   return issueCardForPurchase(deps, id);
 }
 
+/** A person approves or rejects a pending purchase. */
+export async function resolvePurchase(
+  deps: PurchaseDeps,
+  approvalId: string,
+  r: { decision: "approved" | "rejected"; by: string; note?: string },
+): Promise<PurchaseRow> {
+  const approval = await resolveApproval(deps.db, approvalId, r);
+  const purchaseId = approval.subject_id;
+  if (r.decision === "rejected") {
+    const row = await getPurchase(deps.db, purchaseId);
+    await update(deps.db, purchaseId, { status: "denied", decision: { ...row.decision, summary: `Rejected by ${r.by}.` } });
+    return getPurchase(deps.db, purchaseId);
+  }
+  await update(deps.db, purchaseId, { status: "approved" });
+  return issueCardForPurchase(deps, purchaseId);
+}
+
+export interface CardRow {
+  id: string;
+  tenant_id: string;
+  purchase_request_id: string | null;
+  airwallex_card_id: string;
+  status: string;
+  controls: CardControls;
+}
+
+/** Simulates one card authorization in the sandbox and records the outcome. */
+export async function simulateCharge(
+  deps: PurchaseDeps,
+  cardId: string,
+  charge: { amountMinor: number; currency: string; merchantCategoryCode: string; label: string },
+) {
+  if (!deps.simulator) throw new PurchaseError("Sandbox simulation is not configured");
+  const { db } = deps;
+  const [card] = await db.query<CardRow>("SELECT * FROM cards WHERE id = $1", [cardId]);
+  if (!card) throw new PurchaseError(`Unknown card ${cardId}`);
+  const tenant = await tenantInfo(db, card.tenant_id);
+  const res = await deps.simulator.authorizeCard({
+    cardId: card.airwallex_card_id,
+    amount: toMajor(charge.amountMinor, charge.currency),
+    currency: charge.currency,
+    merchantCategoryCode: charge.merchantCategoryCode,
+    onBehalfOf: tenant.airwallex_account_id ?? undefined,
+  });
+  const outcome = res.process_result === "APPROVED" ? "accepted" : "declined";
+  await db.query(
+    `INSERT INTO card_transactions (tenant_id, card_id, airwallex_card_id, airwallex_transaction_id, kind, outcome,
+       amount_minor, currency, merchant_category_code, merchant_name, failure_reason, raw)
+     VALUES ($1, $2, $3, $4, 'simulated_authorization', $5, $6, $7, $8, $9, $10, $11)
+     ON CONFLICT (airwallex_transaction_id) DO NOTHING`,
+    [
+      card.tenant_id,
+      card.id,
+      card.airwallex_card_id,
+      res.card_transaction_id,
+      outcome,
+      charge.amountMinor,
+      charge.currency,
+      charge.merchantCategoryCode,
+      charge.label,
+      res.failure_reason ?? null,
+      JSON.stringify(res),
+    ],
+  );
+  await recordDecision(db, {
+    tenantId: card.tenant_id,
+    actor: "system",
+    action: `card.charge_${outcome}`,
+    subjectType: "card",
+    subjectId: card.id,
+    inputs: { ...charge },
+    outcome: { result: res.process_result, failureReason: res.failure_reason ?? null },
+  });
+  return { outcome, failureReason: res.failure_reason ?? null };
+}
+
+/** Freezes or unfreezes a card: the agent revoking or restoring its own authority. */
+export async function setCardFrozen(deps: PurchaseDeps, cardId: string, frozen: boolean, by: { actor: "human" | "system"; reason: string }) {
+  if (!deps.issuer) throw new PurchaseError("Airwallex is not configured");
+  const { db } = deps;
+  const [card] = await db.query<CardRow>("SELECT * FROM cards WHERE id = $1", [cardId]);
+  if (!card) throw new PurchaseError(`Unknown card ${cardId}`);
+  const tenant = await tenantInfo(db, card.tenant_id);
+  const status = frozen ? "INACTIVE" : "ACTIVE";
+  await deps.issuer.setCardStatus(card.airwallex_card_id, status, tenant.airwallex_account_id ?? undefined);
+  await db.query("UPDATE cards SET status = $2, updated_at = now() WHERE id = $1", [cardId, status]);
+  await recordDecision(db, {
+    tenantId: card.tenant_id,
+    actor: by.actor,
+    action: frozen ? "card.frozen" : "card.unfrozen",
+    subjectType: "card",
+    subjectId: cardId,
+    outcome: { reason: by.reason },
+  });
+}
