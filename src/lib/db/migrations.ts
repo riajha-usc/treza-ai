@@ -255,4 +255,76 @@ CREATE TABLE card_transactions (
 );
 CREATE INDEX card_transactions_card_idx ON card_transactions (card_id, occurred_at)`,
   },
+  {
+    id: "003_orders_and_disputes",
+    sql: `
+-- Marketplace orders. Buyers pay the platform; each order belongs to a seller.
+CREATE TABLE orders (
+  id text PRIMARY KEY,
+  seller_tenant_id text NOT NULL REFERENCES tenants(id),
+  buyer_name text NOT NULL,
+  buyer_email text NOT NULL,
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  channel text NOT NULL DEFAULT 'web' CHECK (channel IN ('web', 'agent')),
+  device_fingerprint text,
+  ip_address text,
+  billing_address text NOT NULL,
+  shipping_address text NOT NULL,
+  carrier text,
+  tracking_number text,
+  shipped_at timestamptz,
+  delivered_at timestamptz,
+  -- Name the carrier recorded at delivery, if a signature was taken.
+  signed_by text,
+  payment_intent_id text UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX orders_seller_idx ON orders (seller_tenant_id, created_at);
+
+-- Source documents the dispute agent may cite: receipts, carrier logs,
+-- support threads. Evidence can only ever come from these rows.
+CREATE TABLE order_documents (
+  id text PRIMARY KEY,
+  order_id text NOT NULL REFERENCES orders(id),
+  kind text NOT NULL CHECK (kind IN ('receipt', 'carrier_log', 'support_thread', 'delivery_confirmation', 'device_history')),
+  title text NOT NULL,
+  body text NOT NULL,
+  -- Documents that arrive later, such as a carrier signature record.
+  available_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX order_documents_order_idx ON order_documents (order_id);
+
+CREATE TABLE disputes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  airwallex_dispute_id text NOT NULL UNIQUE,
+  payment_intent_id text NOT NULL,
+  order_id text REFERENCES orders(id),
+  seller_tenant_id text REFERENCES tenants(id),
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  reason_type text,
+  reason_code text,
+  stage text NOT NULL,
+  status text NOT NULL,
+  due_at timestamptz,
+  decision jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Every accept or challenge sent to Airwallex. The evidence hash makes it
+-- impossible to resubmit the same evidence after an issuer rejects it.
+CREATE TABLE dispute_submissions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  dispute_id uuid NOT NULL REFERENCES disputes(id),
+  stage text NOT NULL,
+  action text NOT NULL CHECK (action IN ('challenge', 'accept')),
+  evidence_hash text,
+  document_ids jsonb NOT NULL DEFAULT '[]',
+  file_ids jsonb NOT NULL DEFAULT '[]',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (dispute_id, evidence_hash)
+)`,
+  },
 ];
