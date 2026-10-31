@@ -59,3 +59,94 @@ async function EnvBadge() {
   );
 }
 
+async function Overview() {
+  await connection();
+  const o = await loadOverview();
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <div className="space-y-4 lg:col-span-1">
+        <Panel title="Setup">
+          <ul className="space-y-3">
+            {o.setup.map((s) => (
+              <li key={s.label} className="flex items-start justify-between gap-3 text-sm">
+                <div>
+                  <p>{s.label}</p>
+                  <p className="text-xs text-muted">{s.detail}</p>
+                </div>
+                <Chip tone={s.ok ? "good" : "warn"}>{s.ok ? "Ready" : "Needed"}</Chip>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+        <Panel title="Platform ledger">
+          {o.balances.length === 0 ? (
+            <Empty>No entries yet. A settled deposit webhook will appear here.</Empty>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {o.balances.map((b) => (
+                <li key={`${b.code}-${b.currency}`} className="flex justify-between gap-3">
+                  <span className="font-mono text-xs text-muted">{b.code}</span>
+                  <span className="tabular-nums">{format(b.balanceMinor, b.currency)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
+
+      <div className="space-y-4 lg:col-span-2">
+        <Panel title="Event ledger">
+          {o.events.length === 0 ? (
+            <Empty>No events yet. Airwallex webhooks and Treza decisions land here.</Empty>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs text-muted">
+                  <tr>
+                    <th className="pb-2 font-normal">Event</th>
+                    <th className="pb-2 font-normal">Tenant</th>
+                    <th className="pb-2 font-normal">Status</th>
+                    <th className="pb-2 font-normal">Occurred</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {o.events.map((e) => (
+                    <tr key={e.id} className="border-t border-line">
+                      <td className="py-2 font-mono text-xs">{e.type}</td>
+                      <td className="py-2 text-muted">{e.tenant_id ?? "platform"}</td>
+                      <td className="py-2">
+                        <Chip tone={e.status === "processed" ? "good" : e.status === "failed" ? "bad" : "neutral"}>
+                          {e.status}
+                        </Chip>
+                      </td>
+                      <td className="py-2 text-xs text-muted">{new Date(e.occurred_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+        <Panel title="Audit trail">
+          {o.audit.length === 0 ? (
+            <Empty>Every decision by rules, a model, a person or the system is recorded here and can never be edited.</Empty>
+          ) : (
+            <ul className="divide-y divide-line text-sm">
+              {o.audit.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span className="flex items-center gap-2">
+                    <Chip tone={a.actor === "model" ? "accent" : "neutral"}>{a.actor}</Chip>
+                    <span className="font-mono text-xs">{a.action}</span>
+                  </span>
+                  <span className="text-xs text-muted">
+                    {a.subject_type} {a.subject_id}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
