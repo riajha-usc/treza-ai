@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* Treza console tokens. Dark is the primary theme; light mirrors it. */
+:root {
+  --bg: #0b0b0d;
+  --panel: #141416;
+  --panel-2: #1b1b1f;
+  --line: #2a2a2e;
+  --text: #f2f2f3;
+  --muted: #9a9aa3;
+  --accent: #1a2a6c;
+  --accent-line: #5b7bff;
+  --accent-text: #c9d2ff;
+  --good: #3ecf8e;
+  --warn: #f5b84b;
+  --bad: #ff6b6b;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f6f8;
+    --panel: #ffffff;
+    --panel-2: #f0f0f4;
+    --line: #dedee4;
+    --text: #141416;
+    --muted: #5d5d66;
+    --accent: #e6ebff;
+    --accent-line: #3f5bd8;
+    --accent-text: #1a2a6c;
+    --good: #12805c;
+    --warn: #a86400;
+    --bad: #c62828;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-line: var(--accent-line);
+  --color-accent-text: var(--accent-text);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
