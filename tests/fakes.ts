@@ -14,6 +14,9 @@ export class FakeIssuer implements CardIssuer, SandboxSimulator {
     this.calls.push({ method: "createCardholder", onBehalfOf: input.onBehalfOf });
     return { cardholder_id: `ch_${++this.seq}`, status: "PENDING" };
   }
+  async findCardholderByEmail() {
+    return { cardholder_id: "ch_existing", status: "READY" };
+  }
   async getCardholder(id: string) {
     return { cardholder_id: id, status: "READY" };
   }

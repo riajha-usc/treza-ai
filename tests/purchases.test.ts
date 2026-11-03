@@ -180,6 +180,23 @@ describe("purchase agent", () => {
     expect(res).toEqual({ outcome: "declined", failureReason: "CARD_INACTIVE" });
   });
 
+  it("reuses an existing cardholder and retries a failed issuance", async () => {
+    const { AirwallexError } = await import("@/lib/airwallex/client");
+    let first = true;
+    const original = issuer.createCardholder.bind(issuer);
+    issuer.createCardholder = async (input) => {
+      if (first) {
+        first = false;
+        throw new AirwallexError(400, "bad_request", "The given email or mobile number is already associated with a cardholder.");
+      }
+      return original(input);
+    };
+    const row = await submitPurchase(deps(new FakeModel("approve", extractedCorrectly)), parcelwise);
+    expect(row.status).toBe("card_issued");
+    const [holder] = await db.query<{ airwallex_cardholder_id: string }>("SELECT airwallex_cardholder_id FROM cardholders");
+    expect(holder.airwallex_cardholder_id).toBe("ch_existing");
+  });
+
   it("never issues a second card for the same purchase", async () => {
     const row = await submitPurchase(deps(new FakeModel("approve", extractedCorrectly)), parcelwise);
     expect((await getPurchase(db, row.id)).status).toBe("card_issued");
