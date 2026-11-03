@@ -4,7 +4,7 @@ import { PLATFORM_ACCOUNTS } from "@/lib/ledger/accounts";
 import { accountBalance, ensureTenant } from "@/lib/ledger/ledger";
 import { loadRiskTier } from "@/lib/purchases/policy";
 import { seedDemo } from "@/lib/seed";
-import { decideBridges, repayBridges, requestBridge } from "@/lib/settlement/bridging";
+import { decideBridges, repayBridges, repayFundedBridges, requestBridge } from "@/lib/settlement/bridging";
 import { runSettlementCycle } from "@/lib/settlement/cycle";
 import { sellerPosition, type SettlementDeps } from "@/lib/settlement/deps";
 import { DEMO_BRIDGE_REQUESTS, DEMO_CARRIER_FAILURE, DEMO_CYCLE_SALES, seedSellerMetrics } from "@/lib/settlement/demo";
@@ -190,5 +190,19 @@ describe("Kit 05: bridge late deposits with scarce capital", () => {
     const [b] = await db.query<{ status: string }>("SELECT status FROM bridges");
     expect(b.status).toBe("repaid");
     expect(await accountBalance(db, "platform", PLATFORM_ACCOUNTS.bridgeReceivable, "USD")).toBe(0);
+  });
+
+  it("late deposits repay every funded bridge and leave deferred ones alone", async () => {
+    for (const r of DEMO_BRIDGE_REQUESTS) await requestBridge(deps, r);
+    await decideBridges(deps);
+    const before = await db.query<{ tenant_id: string; status: string }>("SELECT tenant_id, status FROM bridges ORDER BY tenant_id");
+    const funded = before.filter((b) => b.status === "funded").map((b) => b.tenant_id);
+    expect(funded.length).toBeGreaterThan(0);
+    await repayFundedBridges(deps, 300_000);
+    const after = await db.query<{ tenant_id: string; status: string }>("SELECT tenant_id, status FROM bridges ORDER BY tenant_id");
+    expect(after.filter((b) => b.status === "repaid").map((b) => b.tenant_id)).toEqual(funded);
+    expect(after.filter((b) => b.status !== "repaid").map((b) => b.status)).toEqual(before.filter((b) => b.status !== "funded").map((b) => b.status));
+    expect(await accountBalance(db, "platform", PLATFORM_ACCOUNTS.bridgeReceivable, "USD")).toBe(0);
+    expect(await repayFundedBridges(deps, 300_000)).toEqual(["No funded bridge to repay"]);
   });
 });

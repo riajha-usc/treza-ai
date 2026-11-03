@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getApp } from "@/lib/app";
-import { decideBridges, repayBridges, requestBridge } from "@/lib/settlement/bridging";
+import { decideBridges, repayFundedBridges, requestBridge } from "@/lib/settlement/bridging";
 import { runSettlementCycle } from "@/lib/settlement/cycle";
 import { DEMO_BRIDGE_REQUESTS, DEMO_CARRIER_FAILURE, DEMO_CYCLE_SALES } from "@/lib/settlement/demo";
 import { reportCarrierFailure } from "@/lib/settlement/exposure";
@@ -36,8 +36,8 @@ export async function bridgeRequestsAction() {
   done();
 }
 
-export async function lumenDepositAction() {
-  await repayBridges((await getApp()).settlement, "seller_lumen", 300_000);
+export async function lateDepositsAction() {
+  await repayFundedBridges((await getApp()).settlement, 300_000);
   done();
 }
 

@@ -2,7 +2,7 @@ import { dateTime } from "@/components/time";
 import { Bar, Empty, Panel, PanelBody, PanelNote, Tag, type Tone } from "@/components/ui";
 import { format } from "@/lib/money/money";
 import type { loadSellers } from "@/lib/queries/sellers";
-import { bridgeRequestsAction, carrierFailureAction, lumenDepositAction, onboardAction, runCycleAction } from "./actions";
+import { bridgeRequestsAction, carrierFailureAction, lateDepositsAction, onboardAction, runCycleAction } from "./actions";
 
 export const usd = (minor: number) => format(minor, "USD");
 const BRIDGE: Record<string, [Tone, string]> = { funded: ["info", "Funded"], repaid: ["good", "Repaid"], deferred: ["warn", "Deferred"], denied: ["bad", "Denied"], requested: ["neutral", "Requested"] };
@@ -95,7 +95,7 @@ export function SettlementDetails({ d }: { d: Awaited<ReturnType<typeof loadSell
                   [runCycleAction, "2. Run settlement cycle"],
                   [carrierFailureAction, "3. Carrier failure at Lumen"],
                   [bridgeRequestsAction, "4. Late deposits: bridge requests"],
-                  [lumenDepositAction, "5. Lumen's deposit arrives"],
+                  [lateDepositsAction, "5. Late deposits arrive"],
                 ] as const
               ).map(([action, label]) => (
                 <form key={label} action={action}>

@@ -70,7 +70,7 @@ Open `/sellers` and run the five demo steps in order.
 2. **Run a settlement cycle.** Buyer payments land in the platform wallet. Each seller's reserve comes from its own refund rate, tenure, risk tier, open chargebacks and known exposure, with a written reason for every term. The rest is paid once to the seller's connected account.
 3. **Carrier failure at one seller.** Only that seller's reserve is recalculated. Treza checks the seller's wallet before charging the shortfall, and records anything it cannot cover as owed, netted from the next payout.
 4. **Bridge late deposits.** A deliberately scarce facility never lends against seller reserves, refuses high-risk sellers, and funds the smallest eligible requests first.
-5. **The late deposit arrives.** The bridge is charged back after a wallet check.
+5. **Late deposits arrive.** Every funded bridge is charged back after a wallet check.
 
 **Reconcile** compares how much the platform wallet moved with how much the ledger says it moved, since the sandbox wallet is pre-funded.
 

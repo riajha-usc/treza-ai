@@ -127,3 +127,12 @@ export async function repayBridges(deps: SettlementDeps, tenantId: string, depos
   }
   return log;
 }
+
+/** Late deposits land for every seller that holds a funded bridge, and each bridge is charged back. */
+export async function repayFundedBridges(deps: SettlementDeps, depositMinor: number): Promise<string[]> {
+  const holders = await deps.db.query<{ tenant_id: string }>("SELECT DISTINCT tenant_id FROM bridges WHERE status = 'funded' ORDER BY tenant_id");
+  if (holders.length === 0) return ["No funded bridge to repay"];
+  const log: string[] = [];
+  for (const h of holders) log.push(...(await repayBridges(deps, h.tenant_id, depositMinor)));
+  return log;
+}
