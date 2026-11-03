@@ -26,6 +26,12 @@ export async function onDepositSettled(event: EventRow, db: Db): Promise<void> {
   if (!obj.currency || !Number.isFinite(amount) || amount <= 0) {
     throw new Error(`deposit event ${event.external_id} has no usable amount or currency`);
   }
+  // Deposits Treza staged itself, such as a settlement cycle's buyer
+  // payments, are already in the ledger. Booking them again would double count.
+  if (obj.id) {
+    const [ours] = await db.query("SELECT 1 FROM outbound_requests WHERE response->>'id' = $1", [obj.id]);
+    if (ours) return;
+  }
   const currency = obj.currency.toUpperCase();
   const minor = toMinor(amount, currency);
   const depositId = obj.id ?? event.external_id;
