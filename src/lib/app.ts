@@ -4,6 +4,7 @@ import { AirwallexCardIssuer } from "./airwallex/issuing";
 import { AirwallexDisputeGateway, AirwallexDisputeSimulator } from "./airwallex/payments";
 import { AirwallexPlatformGateway, AirwallexPlatformSimulator } from "./airwallex/platform";
 import type { SettlementDeps } from "./settlement/deps";
+import { StandInVicClient, type VicClient } from "./visa/vic";
 import { seedSellerMetrics } from "./settlement/demo";
 import { AirwallexSandboxSimulator } from "./airwallex/simulation";
 import { getDb, type Db } from "./db/client";
@@ -49,6 +50,7 @@ export interface App {
   purchases: PurchaseDeps;
   disputes: DisputeDeps;
   settlement: SettlementDeps;
+  visa: { vic: VicClient; remoteAuthLive: boolean };
 }
 
 const globalForApp = globalThis as unknown as { trezaApp?: Promise<App> };
@@ -92,7 +94,9 @@ export function getApp(): Promise<App> {
         gateway: airwallex ? new AirwallexPlatformGateway(airwallex) : null,
         simulator: airwallex && e.AIRWALLEX_ENV === "sandbox" ? new AirwallexPlatformSimulator(airwallex) : null,
       };
-      return { db, bus: buildBus(disputes), airwallex, purchases, disputes, settlement };
+      // VIC needs Visa onboarding credentials; until then a labeled stand-in returns the documented shapes.
+      const visa = { vic: new StandInVicClient(), remoteAuthLive: Boolean(e.AIRWALLEX_REMOTE_AUTH_SECRET) };
+      return { db, bus: buildBus(disputes), airwallex, purchases, disputes, settlement, visa };
     })();
   }
   return globalForApp.trezaApp;
