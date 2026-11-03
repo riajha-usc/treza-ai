@@ -1,5 +1,6 @@
 import { getApp } from "../app";
 import { listApprovals } from "../approvals/approvals";
+import { sweepExpiredApprovals } from "../approvals/sweep";
 import { listAudit, type Actor } from "../audit/audit";
 import { loadRiskTier, PolicySchema } from "../purchases/policy";
 
@@ -10,6 +11,7 @@ async function tenantNames() {
 
 export async function loadApprovals() {
   const { db } = await getApp();
+  await sweepExpiredApprovals(db);
   const [rows, names] = await Promise.all([listApprovals(db), tenantNames()]);
   return rows.map((a) => ({ ...a, tenantName: names.get(a.tenant_id) ?? a.tenant_id }));
 }

@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { currentActor } from "@/lib/actor";
 import { getApp } from "@/lib/app";
 import { agentCheckout, type CheckoutMode } from "@/lib/visa/agent-checkout";
 import { issueCardForPurchase, resolvePurchase, setCardFrozen, simulateCharge, submitPurchase } from "@/lib/purchases/agent";
@@ -12,7 +13,7 @@ export async function submitPurchaseAction(form: FormData) {
   const { purchases } = await getApp();
   const row = await submitPurchase(purchases, {
     tenantId: str(form, "tenantId"),
-    requester: str(form, "requester") || "Operator",
+    requester: str(form, "requester") || (await currentActor()).name,
     vendor: str(form, "vendor"),
     merchantCategoryCode: str(form, "mcc"),
     purpose: str(form, "purpose"),
@@ -26,7 +27,7 @@ export async function submitPurchaseAction(form: FormData) {
 export async function resolvePurchaseAction(form: FormData) {
   const { purchases } = await getApp();
   const decision = str(form, "decision") === "approved" ? "approved" : "rejected";
-  const row = await resolvePurchase(purchases, str(form, "approvalId"), { decision, by: "Operator", note: str(form, "note") || undefined });
+  const row = await resolvePurchase(purchases, str(form, "approvalId"), { decision, by: (await currentActor()).name, note: str(form, "note") || undefined });
   revalidatePath(`/purchases/${row.id}`);
 }
 

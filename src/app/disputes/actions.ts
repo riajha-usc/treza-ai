@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { currentActor } from "@/lib/actor";
 import { getApp } from "@/lib/app";
 import { resolveDisputeEscalation } from "@/lib/disputes/execute";
 import { processDisputes, simulateIssuerRejection, simulateResolution, stageDemoDisputes } from "@/lib/disputes/pipeline";
@@ -34,6 +35,6 @@ export async function resolveAction(form: FormData) {
 export async function decideEscalationAction(form: FormData) {
   const { disputes } = await getApp();
   const choice = str(form, "choice") === "challenge" ? "challenge" : "accept";
-  await resolveDisputeEscalation(disputes, str(form, "approvalId"), choice, "Operator");
+  await resolveDisputeEscalation(disputes, str(form, "approvalId"), choice, (await currentActor()).name);
   revalidatePath(`/disputes/${str(form, "disputeId")}`);
 }

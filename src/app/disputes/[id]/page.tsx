@@ -59,10 +59,11 @@ async function Detail({ id }: { id: string }) {
           </Panel>
         </div>
         <div className="flex flex-col gap-4 xl:w-[376px] xl:flex-none">
-          {d.approval ? (
+          {d.approval?.status === "pending" ? (
             <Panel title="A person decides" meta={<Tag tone="warn">Waiting</Tag>}>
               <PanelBody className="flex flex-col gap-3">
                 <p className="text-ink-2">{d.approval.reason}</p>
+                <p className="text-xs text-muted">Decide by {d.approval.expires_at ? dateTime(d.approval.expires_at) : "the network deadline"}, a day before the Airwallex deadline. After that nothing is sent.</p>
                 <form action={decideEscalationAction} className="flex gap-2">
                   {hidden("approvalId", d.approval.id)}
                   {hidden("disputeId", row.id)}
@@ -70,6 +71,14 @@ async function Detail({ id }: { id: string }) {
                   <button name="choice" value="accept" className="btn">Accept and refund</button>
                 </form>
               </PanelBody>
+            </Panel>
+          ) : d.approval?.status === "expired" ? (
+            <Panel title="A person decides" meta={<Tag tone="bad">Deadline passed</Tag>}>
+              <PanelBody className="text-ink-2">Nobody decided before {d.approval.expires_at ? dateTime(d.approval.expires_at) : "the deadline"}, so nothing was sent to Airwallex.</PanelBody>
+            </Panel>
+          ) : d.approval ? (
+            <Panel title="A person decided" meta={<Tag tone="good">{d.approval.resolution_note ?? "Decided"} by {d.approval.resolved_by}</Tag>}>
+              <PanelBody className="text-ink-2">{d.approval.reason}</PanelBody>
             </Panel>
           ) : null}
           {order ? (

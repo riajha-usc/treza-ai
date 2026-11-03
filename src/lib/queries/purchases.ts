@@ -1,4 +1,6 @@
 import { getApp } from "../app";
+import { sweepExpiredApprovals } from "../approvals/sweep";
+import type { ApprovalRow } from "../approvals/approvals";
 import { listAudit } from "../audit/audit";
 import { getPurchase, type CardRow, type PurchaseRow } from "../purchases/agent";
 import { loadPolicy } from "../purchases/policy";
@@ -20,6 +22,7 @@ export async function loadPurchaseList() {
 
 export async function loadPurchaseDetail(id: string) {
   const { db, purchases } = await getApp();
+  await sweepExpiredApprovals(db);
   const row = await getPurchase(db, id);
   const [tenant] = await db.query<{ name: string; airwallex_account_id: string | null }>(
     "SELECT name, airwallex_account_id FROM tenants WHERE id = $1",
@@ -33,7 +36,7 @@ export async function loadPurchaseDetail(id: string) {
       )
     : [];
   const approval = row.approval_id
-    ? (await db.query<{ id: string; status: string; reason: string; resolved_by: string | null }>("SELECT * FROM approvals WHERE id = $1", [row.approval_id]))[0]
+    ? (await db.query<ApprovalRow>("SELECT * FROM approvals WHERE id = $1", [row.approval_id]))[0]
     : null;
   const audit = await listAudit(db, { subjectId: id });
   const cardAudit = cards.length ? await listAudit(db, { subjectId: cards[0].id }) : [];

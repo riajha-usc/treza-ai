@@ -1,5 +1,6 @@
 import { getApp } from "../app";
 import { listApprovals } from "../approvals/approvals";
+import { sweepExpiredApprovals } from "../approvals/sweep";
 import { listAudit } from "../audit/audit";
 import { env } from "../env";
 import { DEFAULT_BRIDGE_POLICY } from "../settlement/bridging";
@@ -10,6 +11,7 @@ const one = async <T>(p: Promise<T[]>) => (await p)[0];
 export async function loadOverview() {
   const e = env();
   const { db, airwallex } = await getApp();
+  await sweepExpiredApprovals(db);
   const [declined, disputes, payout, bridged, auth, cards, ledger, recon, models, approvals, activity, sellerRows] = await Promise.all([
     one(db.query<{ total: number; n: number }>("SELECT COALESCE(SUM(amount_minor), 0)::bigint AS total, count(*)::int AS n FROM card_transactions WHERE outcome = 'declined'")),
     one(

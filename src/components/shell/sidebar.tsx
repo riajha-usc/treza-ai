@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { currentActor } from "@/lib/actor";
 import { loadShell } from "@/lib/queries/shell";
 import { ActiveNav } from "./active-nav";
 import { NavList } from "./nav-list";
@@ -23,8 +24,9 @@ export function Sidebar() {
           <Nav />
         </Suspense>
         <div className="mt-auto flex flex-col gap-0.5 border-t border-line px-2 pt-3 collapsed:hidden">
-          <span className="font-medium">Operator</span>
-          <span className="text-muted">Approves above policy limits</span>
+          <Suspense fallback={<span className="font-medium">&nbsp;</span>}>
+            <Whoami />
+          </Suspense>
         </div>
       </div>
       <SidebarToggle />
@@ -40,4 +42,14 @@ async function PlatformName() {
 async function Nav() {
   await connection();
   return <ActiveNav pending={(await loadShell()).pendingApprovals} />;
+}
+
+async function Whoami() {
+  const actor = await currentActor();
+  return (
+    <>
+      <span className="font-medium">{actor.name}</span>
+      <span className="text-muted">{actor.role}</span>
+    </>
+  );
 }

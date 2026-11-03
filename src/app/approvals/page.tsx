@@ -7,12 +7,12 @@ import { Empty, PageHeader, Panel, Tag } from "@/components/ui";
 import { format } from "@/lib/money/money";
 import { loadApprovals } from "@/lib/queries/controls";
 
-const STATUS = { pending: ["warn", "Waiting"], approved: ["good", "Approved"], rejected: ["bad", "Rejected"] } as const;
+const STATUS = { pending: ["warn", "Waiting"], approved: ["good", "Approved"], rejected: ["bad", "Rejected"], expired: ["bad", "Expired"] } as const;
 
 export default function ApprovalsPage() {
   return (
     <main className="flex flex-col gap-4 p-6">
-      <PageHeader title="Approvals" subtitle="Decisions above policy limits wait here for a person. Each approval is bound to the exact terms it was asked about." />
+      <PageHeader title="Approvals" subtitle="Decisions above policy limits wait here for a person other than the requester. Each approval is bound to the exact terms it was asked about and lapses if nobody acts." />
       <Suspense fallback={<Panel title="Queue"><Empty>Loading approvals...</Empty></Panel>}>
         <Approvals />
       </Suspense>
@@ -43,7 +43,7 @@ function ApprovalTable({ rows, empty }: { rows: Awaited<ReturnType<typeof loadAp
     <div className="overflow-x-auto">
       <table className="tbl">
         <thead>
-          <tr><th>Type</th><th>Tenant</th><th className="num">Amount</th><th>Why a person decides</th><th>Requested</th><th>Status</th><th>Resolved by</th><th /></tr>
+          <tr><th>Type</th><th>Tenant</th><th className="num">Amount</th><th>Why a person decides</th><th>Requested by</th><th>Expires</th><th>Status</th><th>Decided by</th><th /></tr>
         </thead>
         <tbody>
           {rows.map((a) => {
@@ -55,7 +55,8 @@ function ApprovalTable({ rows, empty }: { rows: Awaited<ReturnType<typeof loadAp
                 <td>{a.tenantName}</td>
                 <td className="num">{a.amount_minor != null && a.currency ? format(a.amount_minor, a.currency) : ""}</td>
                 <td className="text-ink-2">{a.reason}</td>
-                <td className="whitespace-nowrap text-muted">{dateTime(a.requested_at)}</td>
+                <td>{a.requested_by ?? <span className="text-muted">Agent</span>}<div className="whitespace-nowrap text-xs text-muted">{dateTime(a.requested_at)}</div></td>
+                <td className="whitespace-nowrap text-muted">{a.expires_at ? dateTime(a.expires_at) : ""}</td>
                 <td><Tag tone={tone}>{label}</Tag></td>
                 <td className="text-ink-2">{a.resolved_by ?? ""}</td>
                 <td className="num">{href ? <Link href={href} className="btn btn-sm">{a.status === "pending" ? "Review" : "Open"}</Link> : null}</td>

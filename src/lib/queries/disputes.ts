@@ -1,4 +1,6 @@
 import { getApp } from "../app";
+import type { ApprovalRow } from "../approvals/approvals";
+import { sweepExpiredApprovals } from "../approvals/sweep";
 import { listAudit } from "../audit/audit";
 import type { DisputeDecision } from "../disputes/agent";
 import type { DisputeRow, OrderRow } from "../disputes/records";
@@ -16,6 +18,7 @@ export async function loadDisputeList() {
 
 export async function loadDisputeDetail(id: string) {
   const { db, disputes } = await getApp();
+  await sweepExpiredApprovals(db);
   const [row] = await db.query<DisputeListRow>(
     "SELECT d.*, t.name AS seller_name FROM disputes d LEFT JOIN tenants t ON t.id = d.seller_tenant_id WHERE d.id = $1",
     [id],
@@ -32,8 +35,8 @@ export async function loadDisputeDetail(id: string) {
     "SELECT * FROM dispute_submissions WHERE dispute_id = $1 ORDER BY created_at",
     [id],
   );
-  const [approval] = await db.query<{ id: string; reason: string }>(
-    "SELECT id, reason FROM approvals WHERE subject_type = 'dispute' AND subject_id = $1 AND status = 'pending'",
+  const [approval] = await db.query<ApprovalRow>(
+    "SELECT * FROM approvals WHERE subject_type = 'dispute' AND subject_id = $1 ORDER BY requested_at DESC LIMIT 1",
     [id],
   );
   return {

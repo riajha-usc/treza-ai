@@ -1,5 +1,7 @@
 import { CashChart } from "@/components/cash-chart";
+import { dateTime } from "@/components/time";
 import { Empty, Facts, Panel, PanelBody, PanelNote, Tag } from "@/components/ui";
+import { samePerson } from "@/lib/approvals/approvals";
 import { format } from "@/lib/money/money";
 import type { PurchaseDetail } from "@/lib/queries/purchases";
 import { resolvePurchaseAction } from "../actions";
@@ -104,21 +106,34 @@ export function ReviewPanel({ d }: { d: PurchaseDetail }) {
   );
 }
 
-export function ApprovalPanel({ d }: { d: PurchaseDetail }) {
-  if (!d.approval) return null;
+const APPROVAL_TAG = { pending: ["warn", "Waiting"], approved: ["good", "Approved"], rejected: ["bad", "Rejected"], expired: ["bad", "Expired"] } as const;
+
+/** A person decides. The requester can never approve their own request, and the window closes after 72 hours. */
+export function ApprovalPanel({ d, actor }: { d: PurchaseDetail; actor: string }) {
+  const a = d.approval;
+  if (!a) return null;
+  const [tone, label] = APPROVAL_TAG[a.status];
+  const self = samePerson(a.requested_by, actor);
   return (
-    <Panel title="Approval" meta={d.approval.status === "pending" ? <Tag tone="warn">Waiting</Tag> : <Tag tone={d.approval.status === "approved" ? "good" : "bad"}>{d.approval.status === "approved" ? "Approved" : "Rejected"} by {d.approval.resolved_by}</Tag>}>
-      <PanelBody className="flex flex-col gap-3">
-        <p className="text-ink-2">{d.approval.reason}</p>
-        {d.approval.status === "pending" ? (
+    <Panel title="Approval" meta={<Tag tone={tone}>{a.resolved_by ? `${label} by ${a.resolved_by}` : label}</Tag>}>
+      <Facts
+        rows={[
+          ["Requested by", a.requested_by ?? "Unknown"],
+          [a.status === "pending" ? "Expires" : "Expired at", a.expires_at ? dateTime(a.expires_at) : "No deadline"],
+        ]}
+      />
+      <PanelBody className="border-t border-line text-ink-2">{a.reason}</PanelBody>
+      {a.status === "pending" ? (
+        <PanelBody className="flex flex-col gap-2 border-t border-line">
           <form action={resolvePurchaseAction} className="flex gap-2">
-            <input type="hidden" name="approvalId" value={d.approval.id} />
-            <button name="decision" value="approved" className="btn btn-primary">Approve</button>
-            <button name="decision" value="rejected" className="btn btn-danger">Reject</button>
+            <input type="hidden" name="approvalId" value={a.id} />
+            <button name="decision" value="approved" className="btn btn-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={self}>Approve</button>
+            <button name="decision" value="rejected" className="btn btn-danger disabled:cursor-not-allowed disabled:opacity-50" disabled={self}>Reject</button>
           </form>
-        ) : null}
-      </PanelBody>
-      <PanelNote>The approval is bound to these exact terms and controls by fingerprint.</PanelNote>
+          {self ? <p className="text-xs text-warn">You are acting as {actor}, who requested this. A different person must decide.</p> : null}
+        </PanelBody>
+      ) : null}
+      <PanelNote>{a.status === "expired" ? "Nobody decided in time, so the purchase was denied and no card was issued." : "The approval is bound to these exact terms and controls by fingerprint, and the database refuses an approval by the requester."}</PanelNote>
     </Panel>
   );
 }

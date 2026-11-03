@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { AuditTable } from "@/components/records";
+import { currentActor } from "@/lib/actor";
 import { StatusChip } from "@/components/status";
 import { dateTime } from "@/components/time";
 import { Empty, PageHeader, Panel } from "@/components/ui";
@@ -25,7 +26,7 @@ export default function PurchaseDetailPage({ params }: PageProps<"/purchases/[id
 /** One purchase: the decision on the left, the card and agent checkout that enforce it on the right. */
 async function Detail({ id }: { id: string }) {
   await connection();
-  const d = await loadPurchaseDetail(id);
+  const [d, actor] = await Promise.all([loadPurchaseDetail(id), currentActor()]);
   const { row } = d;
   return (
     <>
@@ -39,7 +40,7 @@ async function Detail({ id }: { id: string }) {
           <DecisionPanel d={d} />
           <RulesPanel d={d} />
           <ReviewPanel d={d} />
-          <ApprovalPanel d={d} />
+          <ApprovalPanel d={d} actor={actor.name} />
           <Panel title="Decision trace" meta={`${d.audit.length} records`}>
             <AuditTable rows={[...d.audit].reverse()} showSubject={false} empty="No decisions recorded yet." />
           </Panel>

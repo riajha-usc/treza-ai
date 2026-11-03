@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { ACTORS, currentActor } from "@/lib/actor";
 import { loadShell } from "@/lib/queries/shell";
+import { ActorSwitcher } from "./actor-switcher";
 import { Crumbs } from "./crumbs";
 
 export function TopBar() {
@@ -11,11 +13,21 @@ export function TopBar() {
           <Crumbs />
         </Suspense>
       </div>
-      <Suspense fallback={null}>
-        <EnvBadge />
-      </Suspense>
+      <div className="flex items-center gap-4">
+        <Suspense fallback={null}>
+          <ActorMenu />
+        </Suspense>
+        <Suspense fallback={null}>
+          <EnvBadge />
+        </Suspense>
+      </div>
     </header>
   );
+}
+
+async function ActorMenu() {
+  const actor = await currentActor();
+  return <ActorSwitcher actors={ACTORS} current={actor.name} />;
 }
 
 async function EnvBadge() {
