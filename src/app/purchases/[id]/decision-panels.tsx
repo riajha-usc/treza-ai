@@ -1,128 +1,124 @@
-import { Sparkline } from "@/components/sparkline";
-import { Chip, Empty, Panel } from "@/components/ui";
+import { CashChart } from "@/components/cash-chart";
+import { Empty, Facts, Panel, PanelBody, PanelNote, Tag } from "@/components/ui";
 import { format } from "@/lib/money/money";
 import type { PurchaseDetail } from "@/lib/queries/purchases";
 import { resolvePurchaseAction } from "../actions";
 
-const OUTCOME_TONE = { pass: "good", fail: "bad", flag: "warn", info: "neutral" } as const;
-const btn = "rounded-lg border px-3 py-1.5 text-xs font-medium hover:opacity-90";
+const OUTCOME = { pass: ["good", "Pass"], fail: ["bad", "Fail"], flag: ["warn", "Flag"], info: ["neutral", "Note"] } as const;
+const VERDICT = { approve: ["good", "Approve"], deny: ["bad", "Deny"], review: ["warn", "Needs review"] } as const;
+const PER = { monthly: " / month", annual: " / year" } as Record<string, string>;
 
-export function TermsPanel({ d }: { d: PurchaseDetail }) {
+/** The options found in the vendor's terms, each tested against the reserve floor. */
+export function DecisionPanel({ d }: { d: PurchaseDetail }) {
   const { row } = d;
   const dec = row.decision;
+  const projections = dec.rules?.projections ?? [];
+  const source = dec.extraction?.source;
   return (
-    <Panel title="1. Terms read" action={dec.extraction ? <Chip tone={dec.extraction.source === "claude" ? "accent" : "neutral"}>{dec.extraction.source}</Chip> : null}>
-      <p className="mb-3 text-xs text-muted">Every price must appear verbatim in the vendor text, or it is rejected.</p>
-      <ul className="space-y-2 text-sm">
-        {row.options.map((o) => (
-          <li key={o.id} className="flex justify-between gap-3">
-            <span>{o.label}</span>
-            <span className="tabular-nums">
-              {format(o.chargeMinor, o.currency)} {o.billing === "monthly" ? "/ month" : o.billing === "annual" ? "/ year" : "once"}
-            </span>
-          </li>
-        ))}
-        {dec.extraction?.rejected.map((r) => (
-          <li key={r.label} className="text-xs text-bad">
-            Rejected {r.label}: {r.reason}
-          </li>
-        ))}
-      </ul>
+    <Panel title="Decision" meta={source ? <Tag tone={source === "claude" ? "info" : "neutral"}>{source === "claude" ? "Terms read by Claude" : source === "rules" ? "Terms read by rules" : "Prices provided"}</Tag> : null}>
+      <div className="overflow-x-auto">
+        <table className="tbl">
+          <thead>
+            <tr><th>Option</th><th className="num">Price</th><th className="num">Lowest cash, {projections[0]?.weeklyBalancesMinor.length ?? 12} weeks</th><th>Result</th></tr>
+          </thead>
+          <tbody>
+            {row.options.map((o) => {
+              const p = projections.find((x) => x.optionId === o.id);
+              const chosen = dec.chosen?.id === o.id;
+              return (
+                <tr key={o.id}>
+                  <td>{o.label}</td>
+                  <td className="num">{format(o.chargeMinor, o.currency)}{PER[o.billing] ?? " once"}</td>
+                  <td className={`num ${p?.firstBreachWeek ? "text-bad" : ""}`}>{p ? format(p.lowestBalanceMinor, row.currency) : ""}</td>
+                  <td>
+                    {chosen ? <Tag tone="good">Selected</Tag> : p?.firstBreachWeek ? <Tag tone="bad">Below floor in week {p.firstBreachWeek}</Tag> : <Tag>Not selected</Tag>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {projections.length ? (
+        <div className="border-t border-line px-4 py-3.5">
+          <CashChart
+            floorMinor={d.reserveFloorMinor}
+            currency={row.currency}
+            series={projections.map((p) => ({
+              label: row.options.find((o) => o.id === p.optionId)?.label ?? p.optionId,
+              values: p.weeklyBalancesMinor,
+              tone: p.firstBreachWeek ? "bad" : "primary",
+              breachWeek: p.firstBreachWeek,
+            }))}
+          />
+        </div>
+      ) : null}
+      {dec.extraction?.rejected.map((r) => (
+        <PanelNote key={r.label}>
+          <span className="text-bad">Rejected {r.label}: {r.reason}</span>
+        </PanelNote>
+      ))}
+      <PanelNote>{dec.summary}</PanelNote>
     </Panel>
   );
 }
 
 export function RulesPanel({ d }: { d: PurchaseDetail }) {
-  const dec = d.row.decision;
+  const rules = d.row.decision.rules;
+  if (!rules) return null;
+  const [tone, label] = VERDICT[rules.verdict];
   return (
-    <Panel title="2. Policy rules" action={dec.rules ? <Chip>{dec.rules.verdict}</Chip> : null}>
-      <ul className="space-y-2">
-        {dec.rules?.results.map((r, i) => (
-          <li key={i} className="flex items-start gap-2 text-sm">
-            <Chip tone={OUTCOME_TONE[r.outcome]}>{r.outcome}</Chip>
-            <span className="text-muted">{r.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </Panel>  );
-}
-
-export function ProjectionPanel({ d }: { d: PurchaseDetail }) {
-  const { row } = d;
-  const dec = row.decision;
-  if (!dec.rules) return null;
-  return (
-    <Panel title="Cash projection against the reserve floor">
-      <div className="grid gap-4 sm:grid-cols-2">
-        {dec.rules.projections.map((p) => {
-          const o = row.options.find((x) => x.id === p.optionId);
-          return (
-            <div key={p.optionId} className="rounded-xl border border-line p-3">
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span>{o?.label ?? p.optionId}</span>
-                {p.firstBreachWeek ? <Chip tone="bad">breaches week {p.firstBreachWeek}</Chip> : <Chip tone="good">stays above floor</Chip>}
-              </div>
-              <Sparkline values={p.weeklyBalancesMinor} floor={d.reserveFloorMinor} breachWeek={p.firstBreachWeek} />
-              <p className="mt-1 text-xs text-muted">
-                Lowest balance {format(p.lowestBalanceMinor, row.currency)} · floor {format(d.reserveFloorMinor, row.currency)}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+    <Panel title="Policy rules" meta={<Tag tone={tone}>{label}</Tag>}>
+      <table className="tbl">
+        <tbody>
+          {rules.results.map((r, i) => (
+            <tr key={i}>
+              <td className="w-24"><Tag tone={OUTCOME[r.outcome][0]}>{OUTCOME[r.outcome][1]}</Tag></td>
+              <td className="text-ink-2">{r.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Panel>
   );
 }
 
-export function ModelPanel({ d }: { d: PurchaseDetail }) {
-  const dec = d.row.decision;
+export function ReviewPanel({ d }: { d: PurchaseDetail }) {
+  const a = d.row.decision.assessment;
   return (
-    <Panel title="3. Model review">
-      {dec.assessment ? (
-        <div className="space-y-2 text-sm">
-          <div className="flex gap-2">
-            <Chip tone="accent">{dec.assessment.recommendation}</Chip>
-            <Chip>{dec.assessment.confidence} confidence</Chip>
-          </div>
-          <p>{dec.assessment.summary}</p>
-          {dec.assessment.concerns.map((c) => (
-            <p key={c} className="text-xs text-warn">
-              {c}
-            </p>
+    <Panel title="Model review" meta={a ? "Claude Sonnet 5.5" : null}>
+      {a ? (
+        <>
+          <Facts rows={[["Recommendation", <span key="r" className="capitalize">{a.recommendation}</span>], ["Confidence", <span key="c" className="capitalize">{a.confidence}</span>]]} />
+          <PanelBody className="border-t border-line text-ink-2">{a.summary}</PanelBody>
+          {a.concerns.map((c) => (
+            <PanelNote key={c}>
+              <span className="text-warn">{c}</span>
+            </PanelNote>
           ))}
-        </div>
+        </>
       ) : (
-        <Empty>{dec.assessmentIssue ?? "Not needed: the rules settled this request on their own."}</Empty>
+        <Empty>{d.row.decision.assessmentIssue ?? "Not needed: the rules settled this request on their own."}</Empty>
       )}
     </Panel>
   );
 }
 
 export function ApprovalPanel({ d }: { d: PurchaseDetail }) {
+  if (!d.approval) return null;
   return (
-    <Panel title="4. Approval">
-      {d.approval ? (
-        <div className="space-y-3 text-sm">
-          <p className="text-muted">{d.approval.reason}</p>
-          {d.approval.status === "pending" ? (
-            <form action={resolvePurchaseAction} className="flex gap-2">
-              <input type="hidden" name="approvalId" value={d.approval.id} />
-              <button name="decision" value="approved" className={`${btn} border-good/50 text-good`}>
-                Approve
-              </button>
-              <button name="decision" value="rejected" className={`${btn} border-bad/50 text-bad`}>
-                Reject
-              </button>
-            </form>
-          ) : (
-            <Chip tone={d.approval.status === "approved" ? "good" : "bad"}>
-              {d.approval.status} by {d.approval.resolved_by}
-            </Chip>
-          )}
-          <p className="text-xs text-muted">The approval is bound to these exact terms and controls by fingerprint.</p>
-        </div>
-      ) : (
-        <Empty>No person needed for this request.</Empty>
-      )}
-    </Panel>  );
+    <Panel title="Approval" meta={d.approval.status === "pending" ? <Tag tone="warn">Waiting</Tag> : <Tag tone={d.approval.status === "approved" ? "good" : "bad"}>{d.approval.status === "approved" ? "Approved" : "Rejected"} by {d.approval.resolved_by}</Tag>}>
+      <PanelBody className="flex flex-col gap-3">
+        <p className="text-ink-2">{d.approval.reason}</p>
+        {d.approval.status === "pending" ? (
+          <form action={resolvePurchaseAction} className="flex gap-2">
+            <input type="hidden" name="approvalId" value={d.approval.id} />
+            <button name="decision" value="approved" className="btn btn-primary">Approve</button>
+            <button name="decision" value="rejected" className="btn btn-danger">Reject</button>
+          </form>
+        ) : null}
+      </PanelBody>
+      <PanelNote>The approval is bound to these exact terms and controls by fingerprint.</PanelNote>
+    </Panel>
+  );
 }
