@@ -60,7 +60,7 @@ export function CardPanel({ d }: { d: PurchaseDetail }) {
                 ) : null}
               </div>
             ))}
-            {d.cards.length === 0 && row.status === "approved" && d.canIssue ? (
+            {d.cards.length === 0 && (row.status === "approved" || (row.status === "failed" && dec.controls)) && d.canIssue ? (
               <form action={issueCardAction}>
                 <input type="hidden" name="purchaseId" value={row.id} />
                 <button className={`${btn} border-accent-line bg-accent text-accent-text`}>Issue card now</button>

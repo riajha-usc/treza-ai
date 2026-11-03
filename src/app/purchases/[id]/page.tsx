@@ -5,6 +5,7 @@ import { StatusChip } from "@/components/status";
 import { Chip, Empty, Panel } from "@/components/ui";
 import { categoryName } from "@/lib/purchases/merchant-categories";
 import { loadPurchaseDetail } from "@/lib/queries/purchases";
+import { AgentPanel } from "./agent-panel";
 import { CardPanel } from "./card-panel";
 import { ApprovalPanel, ModelPanel, ProjectionPanel, RulesPanel, TermsPanel } from "./decision-panels";
 
@@ -50,6 +51,7 @@ async function Detail({ id }: { id: string }) {
         <ApprovalPanel d={d} />
       </div>
       <CardPanel d={d} />
+      <AgentPanel d={d} />
       <Panel title="Audit trail">
         <ul className="divide-y divide-line text-sm">
           {d.audit.map((a) => (
