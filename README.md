@@ -4,7 +4,7 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Status: Phases 1 to 3 built: foundation, purchase agent, dispute agent. The settlement agent arrives next.
+> Status: Phases 1 to 5 built: foundation, purchase agent, dispute agent, settlement and bridging, and Visa agent commerce.
 
 ## Quickstart
 
@@ -62,9 +62,37 @@ Open `/disputes` and choose **Stage demo disputes**. Treza pays for three demo o
 
 Run it from the command line with `node --env-file=.env --import tsx scripts/stage-disputes.mts`.
 
+## Settlement and bridging (Kits 08 and 05)
+
+Open `/sellers` and run the five demo steps in order.
+
+1. **Onboard sellers.** Each seller becomes an Airwallex connected account with its own wallet and Global Account. Onboarding needs sandbox identity values you add yourself as `SELLER_IDENTITIES` in `.env` (see `.env.example`). Treza never creates identifier numbers.
+2. **Run a settlement cycle.** Buyer payments land in the platform wallet. Each seller's reserve comes from its own refund rate, tenure, risk tier, open chargebacks and known exposure, with a written reason for every term. The rest is paid once to the seller's connected account.
+3. **Carrier failure at one seller.** Only that seller's reserve is recalculated. Treza checks the seller's wallet before charging the shortfall, and records anything it cannot cover as owed, netted from the next payout.
+4. **Bridge late deposits.** A deliberately scarce facility never lends against seller reserves, refuses high-risk sellers, and funds the smallest eligible requests first.
+5. **The late deposit arrives.** The bridge is charged back after a wallet check.
+
+**Reconcile** compares how much the platform wallet moved with how much the ledger says it moved, since the sandbox wallet is pre-funded.
+
+## Visa agent commerce: TAP, VIC and remote authorization
+
+On a purchase with an issued card, panel **6. Verified agent checkout** runs one real-time chain:
+
+1. **Mandate (VIC).** The approved purchase becomes a purchase instruction in Visa Intelligent Commerce's documented shape: purchase type, decline threshold, merchant name, merchant category and expiry.
+2. **Signed checkout (TAP).** The agent signs its checkout request with Visa Trusted Agent Protocol: RFC 9421 HTTP Message Signatures over `@authority` and `@path`, Ed25519, an 8-minute window, a session nonce and the `agent-payer-auth` tag. The consumer object and payment container in the body are signed with the same key and nonce.
+3. **Merchant verification.** A demo merchant runs every step of Visa's merchant spec and rejects replays and forged signatures.
+4. **Issuer-side decision.** Treza answers the card authorization from its own records in milliseconds, with no model in the path: card active, seller not restricted, mandate current, merchant category, per-charge limit, mandate total, and a merchant-verified signed intent for the first charge.
+
+The agent's public key is served at `/api/tap/keys`. Airwallex remote authorization calls `/api/airwallex/remote-auth` once its URL and `AIRWALLEX_REMOTE_AUTH_SECRET` are configured; until then Treza computes the same answer before charging in the sandbox.
+
+**Stated plainly:** the agent is not yet registered with Visa, so the key directory is a self-hosted stand-in for Visa's Key Store. The VIC client is a labeled stand-in, because VIC sandbox calls need Visa onboarding credentials. The Airwallex card is not tokenized through Visa. Airwallex can still decline a charge Treza approves.
+
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/webhooks/airwallex` | Airwallex webhook receiver |
 | GET | `/api/health` | Setup checklist. Add `?check=airwallex` to test credentials. |
+| POST | `/api/airwallex/remote-auth` | Airwallex remote authorization: approve or decline each card charge |
+| GET | `/api/tap/keys` | The agent's TAP public key directory (JWK) |
+| GET | `/api/disputes/{id}/evidence` | The evidence PDF for a dispute |
