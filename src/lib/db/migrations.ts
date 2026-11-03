@@ -407,4 +407,60 @@ CREATE TABLE reconciliation_runs (
   created_at timestamptz NOT NULL DEFAULT now()
 )`,
   },
+  {
+    id: "005_visa_agent_commerce",
+    sql: `
+-- The agent's TAP signing key. In production this lives in a key manager;
+-- locally it is generated once. The public half is served from the key directory.
+CREATE TABLE agent_keys (
+  kid text PRIMARY KEY,
+  public_key_b64 text NOT NULL,
+  private_key_pkcs8_b64 text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Merchant side: every TAP nonce seen in the last 8 minutes, to stop replays.
+CREATE TABLE tap_nonces (
+  nonce text PRIMARY KEY,
+  seen_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- VIC-style purchase instructions (mandates) bound to an issued card.
+CREATE TABLE vic_instructions (
+  instruction_id text PRIMARY KEY,
+  purchase_request_id uuid NOT NULL REFERENCES purchase_requests(id),
+  card_id uuid REFERENCES cards(id),
+  mandate jsonb NOT NULL,
+  credential jsonb NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
+  provider text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Checkouts a merchant verified: the signed intent remote authorization checks.
+CREATE TABLE agent_checkouts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id uuid REFERENCES cards(id),
+  instruction_id text REFERENCES vic_instructions(instruction_id),
+  merchant text NOT NULL,
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  verified boolean NOT NULL,
+  checks jsonb NOT NULL,
+  nonce text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Every remote authorization answer Treza gave Airwallex.
+CREATE TABLE remote_auth_decisions (
+  card_transaction_event_id text PRIMARY KEY,
+  card_id uuid REFERENCES cards(id),
+  response_status text NOT NULL,
+  status_reason text NOT NULL,
+  checks jsonb NOT NULL,
+  latency_ms int NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+)`,
+  },
 ];

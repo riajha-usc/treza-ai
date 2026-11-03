@@ -16,6 +16,8 @@ const EnvSchema = z.object({
   AIRWALLEX_CLIENT_ID: optional(z.string().min(1)),
   AIRWALLEX_API_KEY: optional(z.string().min(1)),
   AIRWALLEX_WEBHOOK_SECRET: optional(z.string().min(1)),
+  /** Shared secret Airwallex returns when remote authorization is configured. */
+  AIRWALLEX_REMOTE_AUTH_SECRET: optional(z.string().min(1)),
 
   ANTHROPIC_API_KEY: optional(z.string().min(1)),
   AWS_REGION: optional(z.string().min(1)),
