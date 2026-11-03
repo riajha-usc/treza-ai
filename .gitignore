@@ -62,3 +62,4 @@ decision.md
 
 # Lockfile is generated locally and never committed (your rule)
 package-lock.json
+
