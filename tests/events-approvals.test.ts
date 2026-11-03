@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { listAudit } from "@/lib/audit/audit";
 import { ApprovalError, requestApproval, resolveApproval } from "@/lib/approvals/approvals";
+import { sweepExpiredApprovals } from "@/lib/approvals/sweep";
 import { testDb, type Db } from "@/lib/db/client";
 import { EventBus, emit, recordInbound, type EventRow } from "@/lib/events/bus";
 import { ensureTenant } from "@/lib/ledger/ledger";
@@ -85,5 +86,32 @@ describe("approvals", () => {
     const { approvalId } = await ask();
     await resolveApproval(db, approvalId, { decision: "rejected", by: "ria" });
     await expect(db.query("UPDATE audit_log SET actor = 'system'")).rejects.toThrow(/append-only/);
+  });
+
+  it("refuses an approval by the person who asked, in code and in the database", async () => {
+    const { approvalId } = await requestApproval(db, {
+      tenantId: "platform", kind: "purchase", subjectType: "purchase_request", subjectId: "pr_2", reason: "Over limit", requestedBy: "Maya Chen",
+    });
+    await expect(resolveApproval(db, approvalId, { decision: "approved", by: " maya chen" })).rejects.toThrow(/different person/);
+    await expect(
+      db.query("UPDATE approvals SET status = 'approved', resolved_by = 'Maya Chen' WHERE id = $1", [approvalId]),
+    ).rejects.toThrow(/cannot be resolved by its requester/);
+    const row = await resolveApproval(db, approvalId, { decision: "approved", by: "Priya Shah" });
+    expect(row.status).toBe("approved");
+  });
+
+  it("lapses an approval nobody acted on and refuses a late decision", async () => {
+    const { approvalId } = await requestApproval(db, {
+      tenantId: "platform", kind: "purchase", subjectType: "purchase_request", subjectId: "pr_3", reason: "Over limit", requestedBy: "Maya Chen",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const later = new Date(Date.now() + 120_000);
+    expect(await sweepExpiredApprovals(db, new Date())).toHaveLength(0);
+    await expect(resolveApproval(db, approvalId, { decision: "approved", by: "Priya Shah", now: later })).rejects.toThrow(/expired/);
+    const [row] = await db.query<{ status: string }>("SELECT status FROM approvals WHERE id = $1", [approvalId]);
+    expect(row.status).toBe("expired");
+    const [entry] = await listAudit(db, { subjectId: "pr_3" });
+    expect(entry.action).toBe("approval.expired");
+    expect(entry.actor).toBe("system");
   });
 });

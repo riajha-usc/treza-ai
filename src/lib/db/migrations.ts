@@ -463,4 +463,27 @@ CREATE TABLE remote_auth_decisions (
   created_at timestamptz NOT NULL DEFAULT now()
 )`,
   },
+  {
+    id: "006_approval_controls",
+    sql: `
+-- Separation of duties and expiry for human approvals. The requester can
+-- never approve their own request, and an approval nobody acts on lapses.
+ALTER TABLE approvals ADD COLUMN requested_by text;
+ALTER TABLE approvals ADD COLUMN expires_at timestamptz;
+ALTER TABLE approvals DROP CONSTRAINT approvals_status_check;
+ALTER TABLE approvals ADD CONSTRAINT approvals_status_check
+  CHECK (status IN ('pending', 'approved', 'rejected', 'expired'));
+
+CREATE FUNCTION assert_separate_approver() RETURNS trigger AS $$
+BEGIN
+  IF NEW.status IN ('approved', 'rejected') AND NEW.requested_by IS NOT NULL AND NEW.resolved_by IS NOT NULL
+     AND lower(regexp_replace(NEW.resolved_by, '\\s', '', 'g')) = lower(regexp_replace(NEW.requested_by, '\\s', '', 'g')) THEN
+    RAISE EXCEPTION 'approval % cannot be resolved by its requester', NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER approvals_separate_approver BEFORE UPDATE ON approvals
+  FOR EACH ROW EXECUTE FUNCTION assert_separate_approver()`,
+  },
 ];

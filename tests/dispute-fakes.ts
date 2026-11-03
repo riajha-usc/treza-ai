@@ -20,7 +20,7 @@ export class FakeDisputes implements DisputeGateway, DisputeSimulator {
   async payWithTestCard(id: string) {
     return { id, status: "SUCCEEDED" };
   }
-  async createDispute(input: { paymentIntentId: string; reasonCode: string; stage: "RFI" | "CHARGEBACK"; amount: number }) {
+  async createDispute(input: { paymentIntentId: string; reasonCode: string; stage: "RFI" | "CHARGEBACK"; amount: number; dueAt?: string }) {
     const d: AirwallexDispute = {
       id: `dis_${++this.seq}`,
       payment_intent_id: input.paymentIntentId,
@@ -28,6 +28,7 @@ export class FakeDisputes implements DisputeGateway, DisputeSimulator {
       currency: "USD",
       stage: input.stage,
       status: "REQUIRES_RESPONSE",
+      due_at: input.dueAt,
       reason: { original_code: input.reasonCode, type: "FRAUDULENT" },
     };
     this.disputes.set(d.id, d);

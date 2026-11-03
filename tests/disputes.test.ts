@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { listApprovals } from "@/lib/approvals/approvals";
+import { ApprovalError, listApprovals } from "@/lib/approvals/approvals";
+import { sweepExpiredApprovals } from "@/lib/approvals/sweep";
+import { listAudit } from "@/lib/audit/audit";
 import { testDb, type Db } from "@/lib/db/client";
 import { getDispute, type DisputeDecision, type DisputeDeps } from "@/lib/disputes/agent";
+import { resolveDisputeEscalation } from "@/lib/disputes/execute";
 import { processDisputes, simulateIssuerRejection, stageDemoDisputes } from "@/lib/disputes/pipeline";
 import { PLATFORM_ACCOUNTS } from "@/lib/ledger/accounts";
 import { accountBalance, ensureTenant } from "@/lib/ledger/ledger";
@@ -130,5 +133,23 @@ describe("closed loop", () => {
     await processDisputes(deps());
     expect((await loadRiskTier(db, "seller_harbor")).reasons).toEqual(before.reasons);
     expect((await getDispute(db, (await byOrder("ord_1042")).id)).status).toBe("CHALLENGED");
+  });
+});
+
+describe("escalation deadline", () => {
+  it("an undecided escalation lapses a day before the network deadline and sends nothing", async () => {
+    await stageDemoDisputes(deps());
+    const refund = await byOrder("ord_1103");
+    const [approval] = await listApprovals(db, { status: "pending" });
+    expect(approval.subject_id).toBe(refund.id);
+    const due = new Date((await getDispute(db, refund.id)).due_at!).getTime();
+    expect(new Date(approval.expires_at!).getTime()).toBeLessThanOrEqual(due - 86_400_000);
+
+    const challengesBefore = aw.challenges.length;
+    expect((await sweepExpiredApprovals(db, new Date(due))).map((a) => a.id)).toEqual([approval.id]);
+    await expect(resolveDisputeEscalation(deps(), approval.id, "challenge", "Sam Ortiz")).rejects.toBeInstanceOf(ApprovalError);
+    expect(aw.challenges).toHaveLength(challengesBefore);
+    expect((await getDispute(db, refund.id)).status).toBe("REQUIRES_RESPONSE");
+    expect((await listAudit(db, { subjectId: refund.id }))[0].action).toBe("approval.expired");
   });
 });

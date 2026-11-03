@@ -3,6 +3,7 @@ import { onceForOperation } from "../airwallex/idempotency";
 import type { CardIssuer } from "../airwallex/issuing";
 import type { SandboxSimulator } from "../airwallex/simulation";
 import { requestApproval, resolveApproval } from "../approvals/approvals";
+import { PURCHASE_APPROVAL_HOURS } from "../approvals/sweep";
 import { recordDecision } from "../audit/audit";
 import type { Db, Queryable } from "../db/client";
 import { emit } from "../events/bus";
@@ -427,6 +428,8 @@ export async function submitPurchase(deps: PurchaseDeps, input: PurchaseInput): 
       currency: chosen.currency,
       reason: review?.issue ?? review?.assessment?.summary ?? "Above the human approval threshold or risk requires review",
       payload: { fingerprint: fp, vendor: input.vendor, option: chosen.label },
+      requestedBy: input.requester,
+      expiresAt: new Date(now().getTime() + PURCHASE_APPROVAL_HOURS * 3_600_000),
     });
     await update(db, id, { status: "pending_approval", decision, fingerprint: fp, approval_id: approvalId });
     await emit(db, { key: `purchase.decided:${id}`, type: "purchase.pending_approval", tenantId: input.tenantId, payload: { purchaseId: id } });

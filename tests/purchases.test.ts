@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { ApprovalError } from "@/lib/approvals/approvals";
+import { PURCHASE_APPROVAL_HOURS, sweepExpiredApprovals } from "@/lib/approvals/sweep";
 import { listAudit } from "@/lib/audit/audit";
 import { testDb, type Db } from "@/lib/db/client";
 import { ensureTenant } from "@/lib/ledger/ledger";
@@ -204,5 +206,26 @@ describe("purchase agent", () => {
     expect(creates).toHaveLength(1);
     const [stored] = await db.query<{ request_id: string }>("SELECT request_id FROM outbound_requests WHERE op_key = $1", [`card:${row.id}`]);
     expect(creates[0].requestId).toBe(stored.request_id);
+  });
+});
+
+describe("approval controls", () => {
+  it("the requester cannot approve their own purchase", async () => {
+    const row = await submitPurchase(deps(null), parcelwise);
+    expect(row.status).toBe("pending_approval");
+    await expect(resolvePurchase(deps(null), row.approval_id!, { decision: "approved", by: "Maya Chen" })).rejects.toBeInstanceOf(ApprovalError);
+    expect((await getPurchase(db, row.id)).status).toBe("pending_approval");
+    expect(issuer.calls.filter((c) => c.method === "createCard")).toHaveLength(0);
+  });
+
+  it("an approval nobody acts on lapses, denies the purchase and never issues a card", async () => {
+    const row = await submitPurchase(deps(null), parcelwise);
+    const afterWindow = new Date(Date.now() + (PURCHASE_APPROVAL_HOURS + 1) * 3_600_000);
+    expect((await sweepExpiredApprovals(db, afterWindow)).map((a) => a.subject_id)).toEqual([row.id]);
+    const denied = await getPurchase(db, row.id);
+    expect(denied.status).toBe("denied");
+    expect(denied.decision.summary).toMatch(/expired/);
+    await expect(resolvePurchase(deps(null), row.approval_id!, { decision: "approved", by: "Priya Shah" })).rejects.toBeInstanceOf(ApprovalError);
+    expect(issuer.calls.filter((c) => c.method === "createCard")).toHaveLength(0);
   });
 });

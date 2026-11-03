@@ -26,6 +26,12 @@ export async function book(db: Db, key: string, account: { code: string; type: "
   });
 }
 
+/** A person must decide a day before Airwallex's deadline, so nothing is ever sent late. */
+function decisionDeadline(dueAt: string | null, now = Date.now()): Date {
+  const latest = dueAt ? new Date(dueAt).getTime() - 86_400_000 : now + 7 * 86_400_000;
+  return new Date(Math.max(latest, now + 3_600_000));
+}
+
 /** Carries out the dispute decision: challenge with evidence, accept, or ask a person. */
 export async function executeDispute(deps: DisputeDeps, disputeId: string, override?: "challenge" | "accept"): Promise<string> {
   const { db } = deps;
@@ -44,6 +50,7 @@ export async function executeDispute(deps: DisputeDeps, disputeId: string, overr
       currency: d.currency,
       reason: decision.reasons.join(". "),
       payload: { stage: d.stage, evidenceHash: decision.evidenceHash },
+      expiresAt: decisionDeadline(d.due_at),
     });
     return created ? "Escalated to a person" : "Already waiting for a person";
   }
