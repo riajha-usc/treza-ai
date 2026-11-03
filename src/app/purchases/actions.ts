@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getApp } from "@/lib/app";
+import { agentCheckout, type CheckoutMode } from "@/lib/visa/agent-checkout";
 import { issueCardForPurchase, resolvePurchase, setCardFrozen, simulateCharge, submitPurchase } from "@/lib/purchases/agent";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -54,4 +55,11 @@ export async function issueCardAction(form: FormData) {
   const { purchases } = await getApp();
   const row = await issueCardForPurchase(purchases, str(form, "purchaseId"));
   revalidatePath(`/purchases/${row.id}`);
+}
+
+export async function agentCheckoutAction(form: FormData) {
+  const { purchases, visa } = await getApp();
+  const mode = str(form, "mode") as CheckoutMode;
+  await agentCheckout({ purchases, ...visa }, str(form, "purchaseId"), mode);
+  revalidatePath(`/purchases/${str(form, "purchaseId")}`);
 }

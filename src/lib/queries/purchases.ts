@@ -38,6 +38,22 @@ export async function loadPurchaseDetail(id: string) {
   const audit = await listAudit(db, { subjectId: id });
   const cardAudit = cards.length ? await listAudit(db, { subjectId: cards[0].id }) : [];
   const policy = await loadPolicy(db, row.tenant_id);
+  const [instruction] = await db.query<{ instruction_id: string; mandate: Record<string, unknown>; provider: string; credential: { panLastFour: string | null } }>(
+    "SELECT * FROM vic_instructions WHERE purchase_request_id = $1 ORDER BY created_at DESC LIMIT 1",
+    [id],
+  );
+  const checkouts = cards.length
+    ? await db.query<{ id: string; verified: boolean; checks: { name: string; pass: boolean; detail: string }[]; created_at: string }>(
+        "SELECT * FROM agent_checkouts WHERE card_id = $1 ORDER BY created_at DESC LIMIT 3",
+        [cards[0].id],
+      )
+    : [];
+  const authorizations = cards.length
+    ? await db.query<{ card_transaction_event_id: string; response_status: string; status_reason: string; latency_ms: number; checks: { name: string; pass: boolean; detail: string }[]; created_at: string }>(
+        "SELECT * FROM remote_auth_decisions WHERE card_id = $1 ORDER BY created_at DESC LIMIT 3",
+        [cards[0].id],
+      )
+    : [];
   return {
     row,
     tenantName: tenant?.name ?? row.tenant_id,
@@ -48,6 +64,7 @@ export async function loadPurchaseDetail(id: string) {
     audit: [...audit, ...cardAudit].sort((a, b) => b.id - a.id),
     reserveFloorMinor: policy?.reserveFloorMinor ?? 0,
     canSimulate: Boolean(purchases.simulator),
+    visa: { instruction: instruction ?? null, checkouts, authorizations },
     canIssue: Boolean(purchases.issuer),
   };
 }
