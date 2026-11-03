@@ -4,7 +4,7 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Status: Phases 1 to 5 built: foundation, purchase agent, dispute agent, settlement and bridging, and Visa agent commerce.
+> Status: purchases, Visa agent checkout, settlement and bridging have all run against the Airwallex sandbox; the IDs are in [Live sandbox evidence](#live-sandbox-evidence). Disputes run on the sandbox simulator until online payments are enabled on the account.
 
 ## Quickstart
 
@@ -12,16 +12,78 @@ Requires Node 22 or newer.
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env
 npm run dev
 ```
 
-Open http://localhost:3000. The console runs with no keys at all, using embedded Postgres, and the Setup panel shows which integrations are still missing.
+Open http://localhost:3000. The console runs with no keys at all, using embedded Postgres, and the Overview shows a setup banner while integrations are missing. Add Airwallex sandbox keys to issue cards and settle sellers, and a Claude key to let the models read documents.
 
 ```bash
-npm test          # unit and integration tests
+npm test          # 90 unit and integration tests, offline, against embedded Postgres
 npm run typecheck # TypeScript
+npm run lint
 ```
+
+## Live sandbox evidence
+
+Everything below ran from this code against the Airwallex sandbox (`api.sandbox.airwallex.com`). The IDs are real sandbox objects. *Simulation endpoint* marks a charge or deposit created through Airwallex's own sandbox simulation API; *stand-in* marks Treza code standing in for a Visa service that needs credentials we do not have. The console and the tests use the same code paths; nothing in the app is a mock.
+
+### Purchase agent, Oct 31 2026
+
+| Step | Result | Sandbox ID |
+|---|---|---|
+| Vendor terms read by Claude Sonnet 5.5 | Two prices found, both quoted word for word, 2,893 ms | audit log |
+| Purpose review by Claude Sonnet 5.5 | Approve, 3,325 ms | audit log |
+| Virtual card issued | Visa ending 1105: $480 per charge, $1,440 lifetime, software merchants only | card `b3995571-46b3-476f-9c6a-97760dc60921` |
+| Monthly charge, $480.00 | Accepted | `01a19177-df7e-7000-b44e-6de11ab40314` (simulation endpoint) |
+| Annual price, $4,723.20 | Declined by the card: LIMIT_EXCEEDED | `01a19177-f218-7000-9b43-f435a3241008` (simulation endpoint) |
+| Restaurant, $40.00 | Declined by the card: MERCHANT_CATEGORY_NOT_ALLOWED | `01a19178-0182-7000-a6fd-d3ab4a0be9c8` (simulation endpoint) |
+
+### Visa agent checkout, Nov 3 2026
+
+Card ending 5255, `32ae0bc0-e234-409d-b569-01d669639c4b`, issued for the Parcelwise monthly plan.
+
+| Step | Result | ID |
+|---|---|---|
+| Mandate created in VIC's documented shape | Up to $480.00 per charge, monthly | `vic_ccc5b514-0bbc-4870-bef8-d4cd6066cf4a` (stand-in) |
+| Agent checkout signed with TAP | Merchant passed 9 of 9 checks | checkout `f8d38a73-1b57-4ffb-9d0b-0241d5890ee0` |
+| Treza authorization decision | AUTHORIZED in 6 ms | `local_234c49ff-578b-437e-805e-4fb78fec675e` |
+| Charge, $480.00 | Accepted | `01a19ed4-5cda-7000-a6c1-5f16c06cdfc3` (simulation endpoint) |
+| Same request replayed | Rejected, nonce already used | checkout `a7e45a30-3cfe-408b-a054-b05ee261a14f` |
+| Forged signature | Rejected | checkout `c9ed5490-7457-46bd-9b65-983ec4bc3ec4` |
+| Next month's charge | Treza AUTHORIZED in 6 ms; the card then declined it, LIMIT_EXCEEDED, because the monthly limit was already used in the same calendar month | `local_1f846c88-0760-481b-a118-9975e7caed3d`, `01a19ed6-7d7e-7000-b8a4-c0716e5485bd` |
+| Merchant tries the annual price | DECLINED in 3 ms: above the mandate's per-charge limit. Nothing was charged. | `local_15b8d889-e7fd-41c4-b41b-867968805fa8` |
+
+Airwallex has not yet called `/api/airwallex/remote-auth` itself, because that needs a public URL. The decisions above were computed by that same endpoint's code before each sandbox charge.
+
+### Settlement and bridging, Nov 3 2026
+
+| Seller | Connected account | Global Account |
+|---|---|---|
+| Lumen Home Goods | `acct_KJQuZerUMbGBd1zfkAnR_w` | `e80cc87d-7052-4f31-8be3-bab99b458475` |
+| Harbor & Pine Ceramics | `acct_5sVS6kChO8yEXg4S_X9n-w` | `148bd35d-c87f-406a-a302-763333ebf7fd` |
+| Kestrel Outdoor | `acct_KqsuaPe3O9aA8Of7O2Q2PQ` | `8dc35c06-0eb7-4e9f-8e4a-26402f04e73f` |
+
+Cycle `cycle_202611032317`. Buyer payments of $18,886.00 landed in the platform wallet (deposit `82108726-cb28-43ea-b81f-dbf8f886ad9a`, simulation endpoint).
+
+| Seller | Reserve | Held | Paid out | Transfer |
+|---|---|---|---|---|
+| Harbor | 2.5% | $245.00 | $8,477.00 | `tr_21Mb5AHkOGeiwdh9qKSYiA` SETTLED |
+| Kestrel | 35.0%, new seller | $1,120.00 | $1,504.00 | `tr_uRDFGrqZMsiCUC2W0VGeFQ` SETTLED |
+| Lumen | 6.25% | $400.00 | $5,200.00 | `tr_0TQwnAvhNzmwJs_wUR8cUQ` SETTLED |
+
+| Event | Result | ID |
+|---|---|---|
+| Reconciliation after the cycle | Platform wallet moved $3,705.00, matching the ledger exactly | |
+| Carrier failure at Lumen: 34 parcels, $560.00 in refund requests | Risk low to elevated, reserve target $2,363.60, shortfall $1,963.60 charged from Lumen's wallet | charge `ch_XNLsMGKIM4KUuz6qPwUJtg` |
+| Bridge requests against a $2,500 facility | Kestrel $1,200 funded; Harbor $1,800 and Lumen $1,380 deferred, because the facility never lends against seller reserves | transfer `tr_oGpnWcS0OcOIQZ8LB4oO8A` |
+| Reconciliation | Wallet moved $4,468.60, matching the ledger exactly | |
+| Late deposit lands for Kestrel | $1,200 bridge charged back | charge `ch_u75KWvuzNd6CNpka7Nzocw` |
+| Reconciliation | Wallet moved $5,668.60, matching the ledger exactly | |
+
+### Disputes
+
+Not yet run on the sandbox. Opening a dispute needs a paid payment intent, and this sandbox account is not yet enabled for online payments (requested from Airwallex). The dispute agent runs end to end against a sandbox simulator in `tests/disputes.test.ts`, and the code calls the real `/api/v1/pa/payment_disputes` endpoints. Once the account is enabled, **Stage demo disputes** on `/disputes` runs it live.
 
 ## What Phase 1 provides
 
