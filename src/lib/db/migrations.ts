@@ -327,4 +327,84 @@ CREATE TABLE dispute_submissions (
   UNIQUE (dispute_id, evidence_hash)
 )`,
   },
+  {
+    id: "004_settlement_and_bridging",
+    sql: `
+-- Inputs to each seller's reserve: refund history and how new the seller is.
+CREATE TABLE seller_metrics (
+  tenant_id text PRIMARY KEY REFERENCES tenants(id),
+  trailing_refund_rate_bps int NOT NULL,
+  first_sale_at timestamptz NOT NULL,
+  airwallex_global_account_id text
+);
+
+-- One settlement cycle pays every seller once.
+CREATE TABLE settlement_cycles (
+  id text PRIMARY KEY,
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'settled', 'failed')),
+  -- Platform wallet balance before the cycle. The sandbox wallet is
+  -- pre-funded, so reconciliation compares movements, not totals.
+  baseline_minor bigint,
+  deposit_minor bigint NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  settled_at timestamptz
+);
+
+-- What each seller earned, what was held back and why, and what was paid.
+CREATE TABLE settlement_lines (
+  cycle_id text NOT NULL REFERENCES settlement_cycles(id),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  currency char(3) NOT NULL,
+  gross_minor bigint NOT NULL,
+  fee_minor bigint NOT NULL,
+  refunds_minor bigint NOT NULL,
+  reserve_rate_bps int NOT NULL,
+  reserve_target_minor bigint NOT NULL,
+  reserve_change_minor bigint NOT NULL,
+  payout_minor bigint NOT NULL,
+  explanation jsonb NOT NULL DEFAULT '[]',
+  transfer_id text,
+  transfer_status text,
+  PRIMARY KEY (cycle_id, tenant_id)
+);
+
+-- New evidence that changes one seller's exposure, such as a carrier failure.
+CREATE TABLE exposure_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  kind text NOT NULL,
+  exposure_minor bigint NOT NULL,
+  refunds_due_minor bigint NOT NULL DEFAULT 0,
+  currency char(3) NOT NULL,
+  details jsonb NOT NULL DEFAULT '{}',
+  resolution jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Short-term advances from the platform when a seller's deposit is late.
+CREATE TABLE bridges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  amount_minor bigint NOT NULL,
+  currency char(3) NOT NULL,
+  purpose text NOT NULL,
+  status text NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'funded', 'deferred', 'denied', 'repaid')),
+  decision jsonb NOT NULL DEFAULT '{}',
+  transfer_id text,
+  repay_charge_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- The account each card was issued on. Cards issued before a seller was
+-- onboarded stay on the platform account even after onboarding.
+ALTER TABLE cards ADD COLUMN on_behalf_of text;
+
+CREATE TABLE reconciliation_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ok boolean NOT NULL,
+  findings jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+)`,
+  },
 ];

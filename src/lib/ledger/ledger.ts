@@ -121,7 +121,8 @@ export async function tenantBalances(q: Queryable, tenantId: string): Promise<Ac
     code: r.code,
     type: r.type,
     currency: r.currency,
-    balanceMinor: isDebitNormal(r.type) ? r.raw : -r.raw,
+    // Avoid -0 for an empty credit-normal account.
+    balanceMinor: isDebitNormal(r.type) || r.raw === 0 ? r.raw : -r.raw,
   }));
 }
 

@@ -19,6 +19,8 @@ export const PLATFORM_ACCOUNTS = {
 export const SELLER_ACCOUNTS = {
   payable: { code: "seller_payable", type: "liability" },
   reserve: { code: "seller_reserve", type: "liability" },
+  /** What a seller owes the platform when a shortfall cannot be charged yet. */
+  receivable: { code: "seller_receivable", type: "asset" },
 } as const satisfies Record<string, { code: string; type: AccountType }>;
 
 /** Debit-normal accounts grow with debits; the rest grow with credits. */
