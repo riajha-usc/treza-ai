@@ -20,6 +20,8 @@ export interface Cardholder {
 export interface CardIssuer {
   createCardholder(input: { email: string; firstName: string; lastName: string; onBehalfOf?: string }): Promise<Cardholder>;
   getCardholder(id: string, onBehalfOf?: string): Promise<Cardholder>;
+  /** Finds an existing cardholder by email, for when one was created by an earlier run. */
+  findCardholderByEmail(email: string, onBehalfOf?: string): Promise<Cardholder | null>;
   createCard(input: {
     requestId: string;
     cardholderId: string;
@@ -54,6 +56,14 @@ export class AirwallexCardIssuer implements CardIssuer {
 
   getCardholder(id: string, onBehalfOf?: string) {
     return this.client.request<Cardholder>("GET", `/api/v1/issuing/cardholders/${id}`, { onBehalfOf });
+  }
+
+  async findCardholderByEmail(email: string, onBehalfOf?: string) {
+    const res = await this.client.request<{ items?: (Cardholder & { email?: string })[] }>("GET", "/api/v1/issuing/cardholders", {
+      onBehalfOf,
+      query: { page_size: 100 },
+    });
+    return res.items?.find((c) => c.email?.toLowerCase() === email.toLowerCase()) ?? null;
   }
 
   createCard(input: Parameters<CardIssuer["createCard"]>[0]) {

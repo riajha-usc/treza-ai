@@ -142,12 +142,16 @@ async function ensureCardholder(deps: PurchaseDeps, tenantId: string, tenantName
     [tenantId],
   );
   if (existing) return existing.airwallex_cardholder_id;
-  const holder = await deps.issuer!.createCardholder({
-    email: `cards+${tenantId}@example.com`,
-    firstName: tenantName.split(" ")[0] ?? "Treza",
-    lastName: "Delegate",
-    onBehalfOf,
-  });
+  const email = `cards+${tenantId}@example.com`;
+  let holder: { cardholder_id: string; status: string };
+  try {
+    holder = await deps.issuer!.createCardholder({ email, firstName: tenantName.split(" ")[0] ?? "Treza", lastName: "Delegate", onBehalfOf });
+  } catch (err) {
+    // A cardholder created by an earlier run, for example with a fresh database, is reused.
+    const existing = err instanceof AirwallexError && /already associated/i.test(err.message) ? await deps.issuer!.findCardholderByEmail(email, onBehalfOf) : null;
+    if (!existing) throw err;
+    holder = existing;
+  }
   // Cardholders reach READY within seconds without any approval call.
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   let status = holder.status;
@@ -171,7 +175,10 @@ async function ensureCardholder(deps: PurchaseDeps, tenantId: string, tenantName
 export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: string): Promise<PurchaseRow> {
   const { db } = deps;
   const req = await getPurchase(db, purchaseId);
-  if (req.status !== "approved") throw new PurchaseError(`Purchase ${purchaseId} is ${req.status}, not approved`);
+  // A purchase whose card issuance failed can be retried: its approval and fingerprint still stand.
+  const retry = req.status === "failed" && Boolean(req.decision.controls && req.fingerprint);
+  if (req.status !== "approved" && !retry) throw new PurchaseError(`Purchase ${purchaseId} is ${req.status}, not approved`);
+  if (retry) await update(db, purchaseId, { status: "approved" });
   const { chosen, controls } = req.decision;
   if (!chosen || !controls) throw new PurchaseError(`Purchase ${purchaseId} has no chosen option`);
 
@@ -237,7 +244,7 @@ export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: strin
        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (airwallex_card_id) DO NOTHING`,
       [req.tenant_id, purchaseId, card.card_id, card.card_status ?? "PENDING", JSON.stringify(controls), card.card_number ?? null, onBehalfOf ?? null],
     );
-    await update(db, purchaseId, { status: "card_issued" });
+    await update(db, purchaseId, { status: "card_issued", decision: { ...(await getPurchase(db, purchaseId)).decision, issuanceNote: undefined } });
     await recordDecision(db, {
       tenantId: req.tenant_id,
       actor: "system",
