@@ -57,13 +57,14 @@ export async function recordDecision(q: Queryable, d: DecisionRecord): Promise<n
 
 export async function listAudit(
   q: Queryable,
-  filter: { tenantId?: string; subjectType?: string; subjectId?: string; limit?: number } = {},
+  filter: { tenantId?: string; subjectType?: string; subjectId?: string; actor?: Actor; limit?: number } = {},
 ): Promise<AuditRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.tenantId) where.push(`tenant_id = $${params.push(filter.tenantId)}`);
   if (filter.subjectType) where.push(`subject_type = $${params.push(filter.subjectType)}`);
   if (filter.subjectId) where.push(`subject_id = $${params.push(filter.subjectId)}`);
+  if (filter.actor) where.push(`actor = $${params.push(filter.actor)}`);
   const limit = Math.min(filter.limit ?? 100, 500);
   return q.query<AuditRow>(
     `SELECT * FROM audit_log ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
