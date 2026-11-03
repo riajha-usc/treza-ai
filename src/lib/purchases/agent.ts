@@ -19,6 +19,7 @@ import { categoryName } from "./merchant-categories";
 import type { PurchaseOption } from "./options";
 import { loadPolicy, loadRiskTier } from "./policy";
 import { evaluateRules, type RulesOutcome } from "./rules";
+import { instructionsToReviewer } from "../untrusted";
 import { parseTermsWithRules, verifyExtracted } from "./terms";
 
 export interface PurchaseDeps {
@@ -47,7 +48,7 @@ export type PurchaseStatus = "received" | "pending_approval" | "approved" | "den
 
 export interface PurchaseDecision {
   summary: string;
-  extraction?: { source: "provided" | "claude" | "rules"; rejected: { label: string; reason: string }[] };
+  extraction?: { source: "provided" | "claude" | "rules"; rejected: { label: string; reason: string }[]; warning?: string | null };
   rules?: Pick<RulesOutcome, "verdict" | "results" | "projections" | "deferred" | "needsHuman">;
   chosen?: PurchaseOption | null;
   assessment?: Assessment | null;
@@ -298,7 +299,12 @@ async function readOptions(deps: PurchaseDeps, id: string, input: PurchaseInput)
   }
   extracted ??= parseTermsWithRules(input.termsText, input.currency);
   const verified = verifyExtracted(input.termsText, extracted);
-  return { options: verified.options, extraction: { source, rejected: verified.rejected } };
+  const phrase = instructionsToReviewer(input.termsText);
+  const warning = phrase ? `The vendor terms contain text aimed at an automated reviewer ("${phrase}")` : null;
+  if (warning) {
+    await recordDecision(deps.db, { tenantId: input.tenantId, actor: "rules", action: "purchase.terms_flagged", subjectType: "purchase_request", subjectId: id, outcome: { phrase } });
+  }
+  return { options: verified.options, extraction: { source, rejected: verified.rejected, warning } };
 }
 
 /** Step 3: the model weighs only what the rules flagged. */
@@ -385,6 +391,11 @@ export async function submitPurchase(deps: PurchaseDeps, input: PurchaseInput): 
 
   let verdict: "approve" | "deny" | "review" = outcome.verdict;
   let needsHuman = outcome.needsHuman;
+  if (extraction.warning) {
+    // Code never follows text in the terms, and a person confirms the prices it may have been written to distort.
+    outcome.results.push({ code: "terms_address_reviewer", outcome: "flag", detail: `${extraction.warning}, so a person confirms the prices` });
+    needsHuman = true;
+  }
   let review: Awaited<ReturnType<typeof reviewWithModel>> | null = null;
   if (verdict === "review" && outcome.chosen) {
     review = await reviewWithModel(deps, id, input, { tenantName: tenant.name, chosen: outcome.chosen, riskTier: risk.tier, rules: outcome.results });

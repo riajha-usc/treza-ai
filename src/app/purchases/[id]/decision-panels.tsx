@@ -55,6 +55,11 @@ export function DecisionPanel({ d }: { d: PurchaseDetail }) {
           />
         </div>
       ) : null}
+      {dec.extraction?.warning ? (
+        <PanelNote>
+          <span className="text-warn">{dec.extraction.warning}. Code ignores it, and a person confirms the prices.</span>
+        </PanelNote>
+      ) : null}
       {dec.extraction?.rejected.map((r) => (
         <PanelNote key={r.label}>
           <span className="text-bad">Rejected {r.label}: {r.reason}</span>
