@@ -9,7 +9,7 @@ import { runSettlementCycle } from "@/lib/settlement/cycle";
 import { sellerPosition, type SettlementDeps } from "@/lib/settlement/deps";
 import { DEMO_BRIDGE_REQUESTS, DEMO_CARRIER_FAILURE, DEMO_CYCLE_SALES, seedSellerMetrics } from "@/lib/settlement/demo";
 import { reportCarrierFailure } from "@/lib/settlement/exposure";
-import { onboardSellers } from "@/lib/settlement/onboard";
+import { onboardSellers, SELLER_PROFILES } from "@/lib/settlement/onboard";
 import { reconcileCycle } from "@/lib/settlement/reconcile";
 import { computeReserve } from "@/lib/settlement/reserves";
 import { FakePlatform } from "./settlement-fakes";
@@ -63,6 +63,21 @@ describe("Kit 08: settle sellers", () => {
     const fresh: SettlementDeps = { db: await testDb(), gateway: new FakePlatform(), simulator: null, sleep: async () => {} };
     fresh.simulator = fresh.gateway as FakePlatform;
     expect((await onboardSellers(fresh, null)).every((l) => l.includes("skipped"))).toBe(true);
+  });
+
+  it("reuses a connected account an earlier run left unsubmitted instead of creating a second one", async () => {
+    const platform = new FakePlatform();
+    const fresh: SettlementDeps = { db: await testDb(), gateway: platform, simulator: platform, sleep: async () => {} };
+    await ensureTenant(fresh.db, { id: "platform", kind: "platform", name: "Meridian Market" });
+    await seedDemo(fresh.db);
+    await seedSellerMetrics(fresh.db);
+    const [profile] = SELLER_PROFILES;
+    await platform.createAccount({ ...profile, identity: TEST_IDENTITIES[profile.tenantId] });
+    const log = await onboardSellers(fresh, TEST_IDENTITIES);
+    expect(log.some((l) => l.includes("from an earlier run"))).toBe(true);
+    const lumen = [...platform.accounts.values()].filter((a) => a.profile.tenantId === "seller_lumen");
+    expect(lumen).toHaveLength(1);
+    expect(lumen[0].status).toBe("ACTIVE");
   });
 
   it("onboards each seller once as an active connected account with its own Global Account", async () => {

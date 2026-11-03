@@ -29,6 +29,10 @@ export class FakePlatform implements PlatformGateway, PlatformSimulator {
     this.wallets.set(id, 0);
     return { id, status: "CREATED" };
   }
+  async findAccount(identifier: string) {
+    for (const [id, a] of this.accounts) if (a.profile.tenantId === identifier) return { id, status: a.status };
+    return null;
+  }
   async updateAccount(id: string) {
     return { id, status: this.accounts.get(id)!.status };
   }

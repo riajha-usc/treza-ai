@@ -34,6 +34,8 @@ export interface SellerProfile {
 /** Platform calls for Kits 05 and 08. Customer-scoped calls carry x-on-behalf-of. */
 export interface PlatformGateway {
   createAccount(p: SellerProfile): Promise<{ id: string; status: string }>;
+  /** The connected account already carrying this identifier, if an earlier run created one. */
+  findAccount(identifier: string): Promise<{ id: string; status: string } | null>;
   /** Fills in business details on an account that has not been submitted yet. */
   updateAccount(id: string, p: SellerProfile): Promise<{ id: string; status: string }>;
   submitAccount(id: string): Promise<{ id: string; status: string }>;
@@ -92,35 +94,43 @@ function businessDetails(p: SellerProfile) {
   };
 }
 
+function businessPerson(p: SellerProfile) {
+  return {
+    first_name: p.person.firstName,
+    last_name: p.person.lastName,
+    date_of_birth: "1986-04-12",
+    email: p.email,
+    nationality: "US",
+    residential_address: addressOf(p),
+    roles: ["BENEFICIAL_OWNER", "DIRECTOR", "AUTHORISED_PERSON"],
+    identifications: { primary: identification(p.identity.person) },
+  };
+}
+
 export class AirwallexPlatformGateway implements PlatformGateway {
   constructor(private readonly client: AirwallexClient) {}
 
+  async findAccount(identifier: string) {
+    const res = await this.client.request<{ items?: { id: string; status: string; identifier?: string }[] }>("GET", "/api/v1/accounts", {
+      query: { identifier, page_size: 10 },
+    });
+    return res.items?.find((a) => a.identifier === identifier) ?? null;
+  }
+
   updateAccount(id: string, p: SellerProfile) {
     return this.client.request<{ id: string; status: string }>("POST", `/api/v1/accounts/${id}/update`, {
-      body: { account_details: { business_details: businessDetails(p) } },
+      body: { account_details: { business_details: businessDetails(p), business_person_details: [businessPerson(p)] } },
     });
   }
 
   createAccount(p: SellerProfile) {
-    const address = addressOf(p);
     return this.client.request<{ id: string; status: string }>("POST", "/api/v1/accounts/create", {
       body: {
         account_details: {
           legal_entity_type: "BUSINESS",
           business_details: businessDetails(p),
-          // Include the business person at create: adding one later does not persist.
-          business_person_details: [
-            {
-              first_name: p.person.firstName,
-              last_name: p.person.lastName,
-              date_of_birth: "1986-04-12",
-              email: p.email,
-              nationality: "US",
-              residential_address: address,
-              roles: ["BENEFICIAL_OWNER", "DIRECTOR", "AUTHORISED_PERSON"],
-              identifications: { primary: identification(p.identity.person) },
-            },
-          ],
+          // Include the business person at create; update sends it again for accounts created before identities existed.
+          business_person_details: [businessPerson(p)],
         },
         customer_agreements: {
           agreed_to_terms_and_conditions: true,

@@ -46,8 +46,15 @@ export async function onboardSellers(deps: SettlementDeps, identities: Record<st
     const [t] = await db.query<{ airwallex_account_id: string | null }>("SELECT airwallex_account_id FROM tenants WHERE id = $1", [p.tenantId]);
     let accountId = t?.airwallex_account_id ?? null;
     if (!accountId) {
-      const { result } = await onceForOperation(db, { key: `account:${p.tenantId}`, tenantId: p.tenantId, method: "POST", path: "/api/v1/accounts/create" }, () => gateway.createAccount(p));
-      accountId = result.id;
+      // Airwallex allows one account per identifier. A run after a database reset finds the earlier one instead of failing.
+      const found = await gateway.findAccount(p.tenantId);
+      if (found) {
+        accountId = found.id;
+        log.push(`${p.businessName}: found connected account ${accountId} from an earlier run (${found.status})`);
+      } else {
+        const { result } = await onceForOperation(db, { key: `account:${p.tenantId}`, tenantId: p.tenantId, method: "POST", path: "/api/v1/accounts/create" }, () => gateway.createAccount(p));
+        accountId = result.id;
+      }
       // A retry may find an account created on an earlier attempt; make sure its details are complete before submitting.
       const current = await gateway.getAccount(accountId);
       if (current.status === "CREATED") {
