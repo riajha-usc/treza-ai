@@ -1,30 +1,44 @@
-import { Chip, Empty, Panel } from "@/components/ui";
+import { Empty, Facts, Panel, PanelNote, Tag } from "@/components/ui";
 import { FACTS } from "@/lib/disputes/facts";
 import { format } from "@/lib/money/money";
 import type { DisputeDetail } from "@/lib/queries/disputes";
+import { ACTION_TAG } from "../tags";
 
+/** Facts the evidence rests on, each with the exact words it was found in. */
 export function EvidencePanel({ d }: { d: DisputeDetail }) {
   const titles = new Map(d.documents.map((doc) => [doc.id, doc.title]));
+  const dec = d.decision;
   return (
-    <Panel title="Verified evidence" action={d.decision ? <Chip tone={d.decision.factSource === "claude" ? "accent" : "neutral"}>{d.decision.factSource === "claude" ? "records + Claude" : "records only"}</Chip> : null}>
-      {!d.decision ? (
+    <Panel title="Verified evidence" meta={dec ? <Tag tone={dec.factSource === "claude" ? "info" : "neutral"}>{dec.factSource === "claude" ? "Records and Claude Opus 5.5" : "Records only"}</Tag> : null}>
+      {!dec ? (
         <Empty>Not evaluated yet.</Empty>
       ) : (
-        <ul className="space-y-3 text-sm">
-          {d.decision.facts.map((f) => (
-            <li key={f.code}>
-              <p>{FACTS[f.code]}</p>
-              <p className="mt-0.5 font-mono text-xs text-muted">&ldquo;{f.quote}&rdquo;</p>
-              <p className="text-xs text-muted">Source: {f.source === "order_record" ? "order record" : titles.get(f.source)}</p>
-            </li>
+        <>
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead><tr><th>Fact</th><th>Quoted from the source</th><th>Source</th></tr></thead>
+              <tbody>
+                {dec.facts.map((f) => (
+                  <tr key={f.code}>
+                    <td>{FACTS[f.code]}</td>
+                    <td className="font-mono text-xs text-ink-2">&ldquo;{f.quote}&rdquo;</td>
+                    <td className="text-muted">{f.source === "order_record" ? "Order record" : titles.get(f.source)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {dec.rejectedFacts.map((r) => (
+            <PanelNote key={r.code}>
+              <span className="text-bad">Rejected {r.code}: {r.reason}</span>
+            </PanelNote>
           ))}
-          {d.decision.rejectedFacts.map((r) => (
-            <li key={r.code} className="text-xs text-bad">
-              Rejected {r.code}: {r.reason}
-            </li>
-          ))}
-          {d.decision.modelIssue ? <li className="text-xs text-warn">{d.decision.modelIssue}</li> : null}
-        </ul>
+          {dec.modelIssue ? (
+            <PanelNote>
+              <span className="text-warn">{dec.modelIssue}</span>
+            </PanelNote>
+          ) : null}
+        </>
       )}
     </Panel>
   );
@@ -32,31 +46,25 @@ export function EvidencePanel({ d }: { d: DisputeDetail }) {
 
 export function DecisionPanel({ d }: { d: DisputeDetail }) {
   const dec = d.decision;
-  if (!dec) return <Panel title="Decision"><Empty>Not evaluated yet.</Empty></Panel>;
+  if (!dec) return null;
   const e = dec.economics;
   const cur = d.row.currency;
+  const [tone, label] = ACTION_TAG[dec.action];
   return (
-    <Panel title="Decision" action={<Chip tone={dec.action === "challenge" ? "accent" : dec.action === "escalate" ? "warn" : "neutral"}>{dec.action}</Chip>}>
-      <div className="space-y-2 text-sm">
-        <p>
-          <span className="text-muted">Reason:</span> {d.row.reason_code} {dec.assessment.reasonLabel}
-        </p>
-        <p>
-          <span className="text-muted">Evidence:</span> {dec.assessment.strength}, {Math.round(dec.assessment.winProbability * 100)}% estimated win chance
-        </p>
-        <p>
-          <span className="text-muted">Expected loss if accepted:</span> {format(e.acceptLossMinor, cur)}
-        </p>
-        <p>
-          <span className="text-muted">Expected loss if challenged:</span> {format(e.challengeLossMinor, cur)} (including the {format(e.challengeFeeMinor, cur)} fee)
-        </p>
-        {dec.reasons.map((r) => (
-          <p key={r} className="text-xs text-muted">
-            {r}
-          </p>
-        ))}
-        {dec.sellerEvidenceRequested.length ? <p className="text-xs text-accent-text">Asked the seller for more evidence and received {dec.sellerEvidenceRequested.length} new document(s).</p> : null}
-      </div>
+    <Panel title="Decision" meta={<Tag tone={tone}>{label}</Tag>}>
+      <Facts
+        rows={[
+          ["Reason code", `${d.row.reason_code} ${dec.assessment.reasonLabel}`],
+          ["Evidence strength", <span key="s" className="capitalize">{dec.assessment.strength}</span>],
+          ["Estimated win chance", `${Math.round(dec.assessment.winProbability * 100)}%`],
+          ["Expected loss if accepted", format(e.acceptLossMinor, cur)],
+          ["Expected loss if challenged", `${format(e.challengeLossMinor, cur)} incl. ${format(e.challengeFeeMinor, cur)} fee`],
+        ]}
+      />
+      {dec.reasons.map((r) => (
+        <PanelNote key={r}>{r}</PanelNote>
+      ))}
+      {dec.sellerEvidenceRequested.length ? <PanelNote>Asked the seller for more evidence and received {dec.sellerEvidenceRequested.length} new document(s).</PanelNote> : null}
     </Panel>
   );
 }
