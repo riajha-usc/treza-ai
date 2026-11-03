@@ -6,6 +6,9 @@ import { requestApproval, resolveApproval } from "../approvals/approvals";
 import { recordDecision } from "../audit/audit";
 import type { Db, Queryable } from "../db/client";
 import { emit } from "../events/bus";
+import { PLATFORM_ACCOUNTS } from "../ledger/accounts";
+import { postEntry } from "../ledger/ledger";
+import { PLATFORM_TENANT_ID } from "../tenancy";
 import type { Assessment, PurchaseModel } from "../models/purchase-model";
 import { format, toMajor } from "../money/money";
 import { loadCash } from "./cash";
@@ -230,9 +233,9 @@ export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: strin
         }),
     );
     await db.query(
-      `INSERT INTO cards (tenant_id, purchase_request_id, airwallex_card_id, status, controls, masked_number)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (airwallex_card_id) DO NOTHING`,
-      [req.tenant_id, purchaseId, card.card_id, card.card_status ?? "PENDING", JSON.stringify(controls), card.card_number ?? null],
+      `INSERT INTO cards (tenant_id, purchase_request_id, airwallex_card_id, status, controls, masked_number, on_behalf_of)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (airwallex_card_id) DO NOTHING`,
+      [req.tenant_id, purchaseId, card.card_id, card.card_status ?? "PENDING", JSON.stringify(controls), card.card_number ?? null, onBehalfOf ?? null],
     );
     await update(db, purchaseId, { status: "card_issued" });
     await recordDecision(db, {
@@ -453,6 +456,8 @@ export interface CardRow {
   airwallex_card_id: string;
   status: string;
   controls: CardControls;
+  /** Connected account the card was issued on, or null for the platform account. */
+  on_behalf_of: string | null;
 }
 
 /** Simulates one card authorization in the sandbox and records the outcome. */
@@ -465,13 +470,12 @@ export async function simulateCharge(
   const { db } = deps;
   const [card] = await db.query<CardRow>("SELECT * FROM cards WHERE id = $1", [cardId]);
   if (!card) throw new PurchaseError(`Unknown card ${cardId}`);
-  const tenant = await tenantInfo(db, card.tenant_id);
   const res = await deps.simulator.authorizeCard({
     cardId: card.airwallex_card_id,
     amount: toMajor(charge.amountMinor, charge.currency),
     currency: charge.currency,
     merchantCategoryCode: charge.merchantCategoryCode,
-    onBehalfOf: tenant.airwallex_account_id ?? undefined,
+    onBehalfOf: card.on_behalf_of ?? undefined,
   });
   const outcome = res.process_result === "APPROVED" ? "accepted" : "declined";
   await db.query(
@@ -493,6 +497,8 @@ export async function simulateCharge(
       JSON.stringify(res),
     ],
   );
+  // A card on the platform's own account spends platform cash, so book it.
+  if (outcome === "accepted" && !card.on_behalf_of) await bookPlatformCardSpend(db, res.card_transaction_id, charge.amountMinor, charge.currency, charge.label);
   await recordDecision(db, {
     tenantId: card.tenant_id,
     actor: "system",
@@ -505,15 +511,26 @@ export async function simulateCharge(
   return { outcome, failureReason: res.failure_reason ?? null };
 }
 
+export async function bookPlatformCardSpend(db: Db, transactionId: string, amountMinor: number, currency: string, label: string) {
+  await postEntry(db, {
+    idempotencyKey: `card-spend:${transactionId}`,
+    kind: "card_spend",
+    description: `Card spend: ${label}`,
+    lines: [
+      { tenantId: PLATFORM_TENANT_ID, account: PLATFORM_ACCOUNTS.cardSpend, amountMinor, currency },
+      { tenantId: PLATFORM_TENANT_ID, account: PLATFORM_ACCOUNTS.cash, amountMinor: -amountMinor, currency },
+    ],
+  });
+}
+
 /** Freezes or unfreezes a card: the agent revoking or restoring its own authority. */
 export async function setCardFrozen(deps: PurchaseDeps, cardId: string, frozen: boolean, by: { actor: "human" | "system"; reason: string }) {
   if (!deps.issuer) throw new PurchaseError("Airwallex is not configured");
   const { db } = deps;
   const [card] = await db.query<CardRow>("SELECT * FROM cards WHERE id = $1", [cardId]);
   if (!card) throw new PurchaseError(`Unknown card ${cardId}`);
-  const tenant = await tenantInfo(db, card.tenant_id);
   const status = frozen ? "INACTIVE" : "ACTIVE";
-  await deps.issuer.setCardStatus(card.airwallex_card_id, status, tenant.airwallex_account_id ?? undefined);
+  await deps.issuer.setCardStatus(card.airwallex_card_id, status, card.on_behalf_of ?? undefined);
   await db.query("UPDATE cards SET status = $2, updated_at = now() WHERE id = $1", [cardId, status]);
   await recordDecision(db, {
     tenantId: card.tenant_id,

@@ -2,6 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { airwallexFromEnv, type AirwallexClient } from "./airwallex/client";
 import { AirwallexCardIssuer } from "./airwallex/issuing";
 import { AirwallexDisputeGateway, AirwallexDisputeSimulator } from "./airwallex/payments";
+import { AirwallexPlatformGateway, AirwallexPlatformSimulator } from "./airwallex/platform";
+import type { SettlementDeps } from "./settlement/deps";
+import { seedSellerMetrics } from "./settlement/demo";
 import { AirwallexSandboxSimulator } from "./airwallex/simulation";
 import { getDb, type Db } from "./db/client";
 import { env } from "./env";
@@ -45,6 +48,7 @@ export interface App {
   airwallex: AirwallexClient | null;
   purchases: PurchaseDeps;
   disputes: DisputeDeps;
+  settlement: SettlementDeps;
 }
 
 const globalForApp = globalThis as unknown as { trezaApp?: Promise<App> };
@@ -58,7 +62,10 @@ export function getApp(): Promise<App> {
         kind: "platform",
         name: process.env.PLATFORM_NAME ?? "Meridian Market",
       });
-      if (process.env.SEED_DEMO !== "false") await seedDemo(db);
+      if (process.env.SEED_DEMO !== "false") {
+        await seedDemo(db);
+        await seedSellerMetrics(db);
+      }
       const e = env();
       const airwallex = airwallexFromEnv(e);
       const purchases: PurchaseDeps = {
@@ -80,7 +87,12 @@ export function getApp(): Promise<App> {
               ? new ClaudeDisputeModel({ apiKey: e.ANTHROPIC_API_KEY })
               : null,
       };
-      return { db, bus: buildBus(disputes), airwallex, purchases, disputes };
+      const settlement: SettlementDeps = {
+        db,
+        gateway: airwallex ? new AirwallexPlatformGateway(airwallex) : null,
+        simulator: airwallex && e.AIRWALLEX_ENV === "sandbox" ? new AirwallexPlatformSimulator(airwallex) : null,
+      };
+      return { db, bus: buildBus(disputes), airwallex, purchases, disputes, settlement };
     })();
   }
   return globalForApp.trezaApp;

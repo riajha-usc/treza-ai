@@ -1,6 +1,7 @@
 import type { Db } from "../db/client";
 import type { EventRow } from "../events/bus";
 import { toMinor } from "../money/money";
+import { bookPlatformCardSpend } from "../purchases/agent";
 
 interface IssuingObject {
   id?: string;
@@ -25,7 +26,9 @@ export async function onIssuingTransaction(event: EventRow, db: Db): Promise<voi
   const obj = (event.payload as { data?: { object?: IssuingObject } }).data?.object ?? {};
   const txId = obj.transaction_id ?? obj.id;
   if (!txId || !obj.card_id) throw new Error(`issuing event ${event.external_id} has no transaction or card id`);
-  const [card] = await db.query<{ id: string; tenant_id: string }>("SELECT id, tenant_id FROM cards WHERE airwallex_card_id = $1", [
+  const [card] = await db.query<{ id: string; tenant_id: string; on_platform: boolean }>(
+    "SELECT id, tenant_id, on_behalf_of IS NULL AS on_platform FROM cards WHERE airwallex_card_id = $1",
+    [
     obj.card_id,
   ]);
   if (!card) return; // A card Treza did not issue. Nothing to reconcile.
@@ -62,4 +65,5 @@ export async function onIssuingTransaction(event: EventRow, db: Db): Promise<voi
       JSON.stringify(obj),
     ],
   );
+  if (outcome === "accepted" && card.on_platform) await bookPlatformCardSpend(db, txId, toMinor(amount, currency), currency, obj.merchant?.name ?? "card charge");
 }
