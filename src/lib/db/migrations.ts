@@ -486,4 +486,12 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER approvals_separate_approver BEFORE UPDATE ON approvals
   FOR EACH ROW EXECUTE FUNCTION assert_separate_approver()`,
   },
+  {
+    id: "007_seller_statements",
+    sql: `
+-- A seller's own account of events. Read for context, never accepted as proof.
+ALTER TABLE order_documents DROP CONSTRAINT order_documents_kind_check;
+ALTER TABLE order_documents ADD CONSTRAINT order_documents_kind_check
+  CHECK (kind IN ('receipt', 'carrier_log', 'support_thread', 'delivery_confirmation', 'device_history', 'seller_statement'))`,
+  },
 ];

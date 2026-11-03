@@ -79,6 +79,8 @@ export class FakeDisputeModel implements DisputeModel {
       if (asked) facts.push({ code: "customer_contacted_support", source: d.id, quote: asked });
       const returned = find("RETURN DELIVERED");
       if (returned) facts.push({ code: "return_received", source: d.id, quote: returned });
+      const refunded = find("issued your refund");
+      if (refunded) facts.push({ code: "refund_issued", source: d.id, quote: refunded });
     }
     return { ok: true, value: facts, model: this.name, promptVersion: "test@1", latencyMs: 5 };
   }

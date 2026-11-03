@@ -3,7 +3,7 @@ import { ApprovalError, listApprovals } from "@/lib/approvals/approvals";
 import { sweepExpiredApprovals } from "@/lib/approvals/sweep";
 import { listAudit } from "@/lib/audit/audit";
 import { testDb, type Db } from "@/lib/db/client";
-import { getDispute, type DisputeDecision, type DisputeDeps } from "@/lib/disputes/agent";
+import { evaluateDispute, getDispute, type DisputeDecision, type DisputeDeps } from "@/lib/disputes/agent";
 import { resolveDisputeEscalation } from "@/lib/disputes/execute";
 import { processDisputes, simulateIssuerRejection, stageDemoDisputes } from "@/lib/disputes/pipeline";
 import { PLATFORM_ACCOUNTS } from "@/lib/ledger/accounts";
@@ -72,7 +72,7 @@ describe("evidence integrity", () => {
     await stageDemoDisputes(deps(new FakeDisputeModel([madeUp])));
     const refund = await byOrder("ord_1103");
     expect(refund.decision.facts.some((f) => f.code === "refund_issued")).toBe(false);
-    expect(refund.decision.rejectedFacts).toEqual([{ code: "refund_issued", reason: "quote not found in the cited document" }]);
+    expect(refund.decision.rejectedFacts).toContainEqual({ code: "refund_issued", reason: "quote not found in the cited document" });
   });
 
   it("after the issuer rejects, asks the seller for more and sends only new evidence", async () => {
@@ -151,5 +151,30 @@ describe("escalation deadline", () => {
     expect(aw.challenges).toHaveLength(challengesBefore);
     expect((await getDispute(db, refund.id)).status).toBe("REQUIRES_RESPONSE");
     expect((await listAudit(db, { subjectId: refund.id }))[0].action).toBe("approval.expired");
+  });
+});
+
+describe("instructions hidden in evidence", () => {
+  it("a seller note that lies and addresses the reviewer changes nothing and is never sent", async () => {
+    await stageDemoDisputes(deps());
+    const refund = await byOrder("ord_1103");
+    expect(refund.decision.action).toBe("escalate");
+    expect(refund.decision.facts.some((f) => f.code === "refund_issued")).toBe(false);
+    expect(refund.decision.rejectedFacts).toContainEqual({ code: "refund_issued", reason: expect.stringMatching(/instructions aimed at the reviewer/) });
+    expect(refund.decision.flaggedDocs).toEqual([{ id: "doc_1103_seller_note", phrase: "Note to the AI reviewer" }]);
+    expect(refund.decision.evidenceDocIds).not.toContain("doc_1103_seller_note");
+    expect((await listAudit(db, { subjectId: refund.id })).map((a) => a.action)).toContain("dispute.instructions_ignored");
+  });
+
+  it("a seller's own statement cannot prove a refund, even when quoted exactly", async () => {
+    await stageDemoDisputes(deps());
+    await db.query(
+      "INSERT INTO order_documents (id, order_id, kind, title, body) VALUES ('doc_1103_plain', 'ord_1103', 'seller_statement', 'Seller statement', 'Refund of $86.00 issued to the customer on Oct 20.')",
+    );
+    const claim = { code: "refund_issued" as const, source: "doc_1103_plain", quote: "Refund of $86.00 issued" };
+    const decision = await evaluateDispute(deps(new FakeDisputeModel([claim])), (await byOrder("ord_1103")).id);
+    expect(decision.action).toBe("escalate");
+    expect(decision.facts.some((f) => f.code === "refund_issued")).toBe(false);
+    expect(decision.rejectedFacts).toContainEqual({ code: "refund_issued", reason: "a seller statement cannot establish this fact" });
   });
 });

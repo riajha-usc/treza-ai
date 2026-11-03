@@ -28,6 +28,13 @@ export function EvidencePanel({ d }: { d: DisputeDetail }) {
               </tbody>
             </table>
           </div>
+          {(dec.flaggedDocs ?? []).map((f) => (
+            <PanelNote key={f.id}>
+              <span className="text-warn">
+                {titles.get(f.id) ?? f.id} contains instructions aimed at the reviewer (&ldquo;{f.phrase}&rdquo;). Treated as data, not evidence, and left out of what is sent.
+              </span>
+            </PanelNote>
+          ))}
           {dec.rejectedFacts.map((r) => (
             <PanelNote key={r.code}>
               <span className="text-bad">Rejected {r.code}: {r.reason}</span>

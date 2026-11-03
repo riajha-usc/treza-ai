@@ -6,7 +6,7 @@ import { format, toMinor } from "../money/money";
 import { recordRiskSignal } from "../risk/risk";
 import { assessEvidence, decide, DEFAULT_DISPUTE_POLICY, type DisputeAction, type DisputePolicy } from "./assess";
 export type { DisputeAction };
-import { verifyFacts, type Fact } from "./facts";
+import { type Fact, type FlaggedDocument, verifyFacts } from "./facts";
 import { availableDocuments, evidenceHash, getOrder, requestSellerEvidence, structuredFacts, type DisputeRow } from "./records";
 
 export interface DisputeDeps {
@@ -29,6 +29,8 @@ export interface DisputeDecision {
   evidenceDocIds: string[];
   evidenceHash: string;
   sellerEvidenceRequested: string[];
+  /** Documents that tried to instruct the reviewer. Shown, audited, never used as evidence. */
+  flaggedDocs: FlaggedDocument[];
 }
 
 const RISK_WEIGHT: Record<string, number> = { "10.4": 20, "13.1": 10, "13.6": 15 };
@@ -94,6 +96,7 @@ export async function evaluateDispute(deps: DisputeDeps, disputeId: string): Pro
     let docFacts: Fact[] = [];
     let modelIssue: string | null = null;
     let rejected: { code: string; reason: string }[] = [];
+    let flagged: FlaggedDocument[] = [];
     if (deps.model && documents.length) {
       const res = await deps.model.extractFacts({ reasonCode, reasonLabel: assessEvidence(reasonCode, []).reasonLabel, documents });
       await recordDecision(db, { tenantId: d.seller_tenant_id, actor: "model", action: "dispute.documents_read", subjectType: "dispute", subjectId: d.id, model: res.model, promptVersion: res.promptVersion, latencyMs: res.latencyMs, outcome: res.ok ? { facts: res.value.length } : { failed: res.reason, detail: res.detail } });
@@ -101,10 +104,14 @@ export async function evaluateDispute(deps: DisputeDeps, disputeId: string): Pro
         const v = verifyFacts(documents, res.value);
         docFacts = v.verified;
         rejected = v.rejected.map((r) => ({ code: r.fact.code, reason: r.reason }));
+        flagged = v.flagged;
+        if (flagged.length) {
+          await recordDecision(db, { tenantId: d.seller_tenant_id, actor: "rules", action: "dispute.instructions_ignored", subjectType: "dispute", subjectId: d.id, outcome: { documents: flagged } });
+        }
       } else modelIssue = `Model ${res.reason}: documents were not read`;
     } else if (documents.length) modelIssue = "Claude is not configured: documents were not read";
     const facts = dedupe([...(await structuredFacts(db, order)), ...docFacts]);
-    return { documents, facts, modelIssue, rejected };
+    return { documents, facts, modelIssue, rejected, flagged };
   };
 
   let g = await gather();
@@ -145,6 +152,7 @@ export async function evaluateDispute(deps: DisputeDeps, disputeId: string): Pro
     evidenceDocIds: newDocs,
     evidenceHash: evidenceHash(newDocs, g.facts),
     sellerEvidenceRequested,
+    flaggedDocs: g.flagged,
   };
   await db.query("UPDATE disputes SET decision = $2, updated_at = now() WHERE id = $1", [d.id, JSON.stringify(decision)]);
   await recordDecision(db, {
