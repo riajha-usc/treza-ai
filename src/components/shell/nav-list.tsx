@@ -14,6 +14,7 @@ export const NAV: { heading: string; items: Item[] }[] = [
     heading: "Operations",
     items: [
       { href: "/", label: "Overview", short: "Overview", icon: icon(<><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></>) },
+      { href: "/story", label: "Run the story", short: "Story", icon: icon(<path d="M4.5 2.5v11l8-5.5Z" />) },
       { href: "/purchases", label: "Purchases", short: "Purchases", icon: icon(<><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" /><path d="M1.5 6.5h13M4 10h2.5" /></>) },
       { href: "/disputes", label: "Disputes", short: "Disputes", icon: icon(<path d="M8 1.5 13.5 3.5V8c0 3-2.5 5.4-5.5 6.5C5 13.4 2.5 11 2.5 8V3.5Z" />) },
       { href: "/sellers", label: "Sellers", short: "Sellers", icon: icon(<><path d="M2.5 6.5v7h11v-7M1.5 6.5 3 2.5h10l1.5 4Z" /><path d="M6.5 13.5v-4h3v4" /></>) },

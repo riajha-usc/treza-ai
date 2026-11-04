@@ -24,7 +24,11 @@ async function Overview() {
   const f = o.figures;
   return (
     <>
-      <PageHeader title="Overview" subtitle={f.cycle ? `Last settlement cycle ${f.cycle}` : "No settlement cycle run yet"} />
+      <PageHeader
+        title="Overview"
+        subtitle={f.cycle ? `Last settlement cycle ${f.cycle}` : "No settlement cycle run yet"}
+        actions={o.setup.some((s) => s.label === "Airwallex credentials") ? null : <Link href="/story?play=1" className="btn btn-primary">Run the story</Link>}
+      />
 
       {o.setup.length ? (
         <div className="rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-warn">
