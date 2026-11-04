@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "eval": "node --env-file-if-exists=.env --import tsx eval/run.mts",
+    "eval:models": "node --env-file-if-exists=.env --import tsx eval/run.mts --models"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^1.1.0",
