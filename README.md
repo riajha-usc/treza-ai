@@ -18,8 +18,10 @@ npm run dev
 
 Open http://localhost:3000. The console runs with no keys at all, using embedded Postgres, and the Overview shows a setup banner while integrations are missing. Add Airwallex sandbox keys to issue cards and settle sellers, and a Claude key to let the models read documents.
 
+With sandbox keys in place, **Run the story** on the Overview plays one seller's whole journey in about two minutes: a purchase, a signed agent checkout, three card declines, payday, a carrier failure, the loop closing, bridge decisions, repayment and the chargebacks. Every step calls the same code as the pages and records what the sandbox returned.
+
 ```bash
-npm test          # 90 unit and integration tests, offline, against embedded Postgres
+npm test          # 95 unit and integration tests, offline, against embedded Postgres
 npm run typecheck # TypeScript
 npm run lint
 ```
@@ -80,6 +82,10 @@ Cycle `cycle_202611032317`. Buyer payments of $18,886.00 landed in the platform 
 | Reconciliation | Wallet moved $4,468.60, matching the ledger exactly | |
 | Late deposit lands for Kestrel | $1,200 bridge charged back | charge `ch_u75KWvuzNd6CNpka7Nzocw` |
 | Reconciliation | Wallet moved $5,668.60, matching the ledger exactly | |
+
+### Run the story, Nov 3 2026
+
+One click on the Overview played all nine steps against the sandbox in under a minute, reusing the card above. Cycle `cycle_202611040145` paid Lumen $5,600.00 by transfer `tr_M13-_k2gO0SVQCNsfkdpUQ`; the carrier failure charged `ch_VwscpOWZNJqSNkIivDPuwA` from Lumen's wallet; Harbor's $1,800 bridge was funded by `tr_6Dg7DFtmPfirNpjJC0CdTw` and charged back when its deposit landed; both reconciliations matched the ledger exactly.
 
 ### Disputes
 
@@ -168,6 +174,7 @@ The console has no sign-in. The **Acting as** menu in the top bar switches betwe
 
 | Page | What it shows |
 |---|---|
+| `/story` | Run the story: Lumen Home Goods through the whole loop in nine steps, each calling the same code as the pages against the sandbox, with the narration and identifiers each step produced |
 | `/` | Blocked overspend, defended disputes, payouts, bridge outstanding and authorization time, the approvals queue, agent activity, ledger integrity and model usage |
 | `/purchases`, `/purchases/{id}` | Requests, and one purchase's options against the reserve floor, policy rules, model review, approval, card controls, transactions and the Visa agent checkout |
 | `/disputes`, `/disputes/{id}` | The queue, and one dispute's verified evidence, decision economics, submissions, order facts and the decision trace |
