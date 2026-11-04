@@ -494,4 +494,31 @@ ALTER TABLE order_documents DROP CONSTRAINT order_documents_kind_check;
 ALTER TABLE order_documents ADD CONSTRAINT order_documents_kind_check
   CHECK (kind IN ('receipt', 'carrier_log', 'support_thread', 'delivery_confirmation', 'device_history', 'seller_statement'))`,
   },
+  {
+    id: "008_story_runs",
+    sql: `
+-- One seller's journey through the whole loop, played step by step for a
+-- demo. Each step calls the same code as the pages; the run keeps what
+-- every step did and the identifiers it produced.
+CREATE TABLE story_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  started_by text NOT NULL,
+  status text NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'waiting', 'failed', 'done', 'stopped')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz
+);
+CREATE TABLE story_steps (
+  run_id uuid NOT NULL REFERENCES story_runs(id),
+  step text NOT NULL,
+  position int NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'skipped', 'waiting', 'failed')),
+  narration text,
+  refs jsonb NOT NULL DEFAULT '{}',
+  href text,
+  started_at timestamptz,
+  finished_at timestamptz,
+  PRIMARY KEY (run_id, step)
+)`,
+  },
 ];
