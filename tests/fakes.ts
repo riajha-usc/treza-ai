@@ -42,7 +42,8 @@ export class FakeIssuer implements CardIssuer, SandboxSimulator {
     for (const l of c.transaction_limits.limits) {
       // Per-transaction limits are inclusive: equal to the limit clears.
       if (l.interval === "PER_TRANSACTION" && input.amount > l.amount) return decline("LIMIT_EXCEEDED");
-      if (l.interval === "ALL_TIME" && card.spentAllTime + input.amount > l.amount) return decline("LIMIT_EXCEEDED");
+      // A test runs inside one month, so the monthly limit sees the same spend as all-time.
+      if ((l.interval === "ALL_TIME" || l.interval === "MONTHLY") && card.spentAllTime + input.amount > l.amount) return decline("LIMIT_EXCEEDED");
     }
     card.used++;
     card.spentAllTime += input.amount;
