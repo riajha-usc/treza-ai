@@ -156,6 +156,21 @@ The agent's public key is served at `/api/tap/keys`. Airwallex remote authorizat
 
 **Stated plainly:** the agent is not yet registered with Visa, so the key directory is a self-hosted stand-in for Visa's Key Store. The VIC client is a labeled stand-in, because VIC sandbox calls need Visa onboarding credentials. The Airwallex card is not tokenized through Visa. Airwallex can still decline a charge Treza approves.
 
+## Measured, not claimed
+
+`npm run eval` runs labeled sets through the same code the product runs and writes [eval/results.md](eval/results.md); `npm run eval:models` adds one pass of real model calls. The sets are synthetic and hand-labeled, in `eval/sets`. Numbers below are from the Nov 4 2026 run with Claude Sonnet 5.5 reading terms and Claude Opus 5.5 reading dispute documents.
+
+| What | Set | Result |
+|---|---|---|
+| Prices the purchase agent acts on | 24 vendor term sheets, 3 with injected instructions | 23 of 24 exact after code verified every quote; 0 prices acted on that were not in the terms; the model itself read 24 of 24 |
+| Dispute decisions | 16 chargebacks across three reason codes, 2 with injected notes | 16 of 16 decisions match the labels; 4 model readings rejected by the trust rules (seller statements, documents that address the reviewer); both injected documents flagged |
+| Instructions aimed at the reviewer | 30 hostile sentences, 30 clean ones using the same words | 30 of 30 caught, 30 of 30 clean left alone, after tuning on this set; the first measurement caught 17 of 30 |
+| Policy rules | 20 purchase scenarios against the seeded policy | 20 of 20 as specified |
+| Remote authorization time | 500 decisions against the embedded database | median 1.1 ms, p99 2.1 ms, max 2.4 ms; live sandbox 3 to 6 ms; Airwallex allows 2,500 ms |
+| Replays | 200 identical webhooks, 250 identical postings, 200 replays of one transfer | 1 event, 1 journal entry, 1 Airwallex request |
+
+What the misses are: the one terms miss is a price written in words ("seventy-five dollars"), which the model read correctly and the quote check refused because the quote carries no digits. Two model passes differed by one case (a "12-month agreement billed upfront" read once as one-time, once as annual), so the number is 22 to 23 of 24, not a constant. The detector numbers are not held out: it was widened after the first measurement until it caught the set.
+
 ## Controls a bank would ask about
 
 | Control | How it is enforced |
