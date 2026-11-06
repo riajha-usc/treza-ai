@@ -4,7 +4,7 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Status: purchases, Visa agent checkout, settlement and bridging have all run against the Airwallex sandbox; the IDs are in [Live sandbox evidence](#live-sandbox-evidence). Disputes run on the sandbox simulator until online payments are enabled on the account.
+> Status: purchases, the Visa agent checkout, settlement, bridging, disputes and a real refund have all run against the Airwallex sandbox; every ID is in [Live sandbox evidence](#live-sandbox-evidence). The two Visa pieces that need Visa credentials are labeled stand-ins. Measured numbers are in [Measured, not claimed](#measured-not-claimed).
 
 ## Quickstart
 
@@ -21,7 +21,8 @@ Open http://localhost:3000. The console runs with no keys at all, using embedded
 With sandbox keys in place, **Run the story** on the Overview plays one seller's whole journey in about two minutes: a purchase, a signed agent checkout, three card declines, payday, a carrier failure, the loop closing, bridge decisions, repayment and the chargebacks. Every step calls the same code as the pages and records what the sandbox returned.
 
 ```bash
-npm test          # 95 unit and integration tests, offline, against embedded Postgres
+npm test          # 103 unit and integration tests, offline, against embedded Postgres
+npm run eval      # the labeled evaluation sets, offline; eval:models adds one pass of Claude calls
 npm run typecheck # TypeScript
 npm run lint
 ```
@@ -87,13 +88,34 @@ Cycle `cycle_202611032317`. Buyer payments of $18,886.00 landed in the platform 
 
 One click on the Overview played all nine steps against the sandbox in under a minute, reusing the card above. Cycle `cycle_202611040145` paid Lumen $5,600.00 by transfer `tr_M13-_k2gO0SVQCNsfkdpUQ`; the carrier failure charged `ch_VwscpOWZNJqSNkIivDPuwA` from Lumen's wallet; Harbor's $1,800 bridge was funded by `tr_6Dg7DFtmPfirNpjJC0CdTw` and charged back when its deposit landed; both reconciliations matched the ledger exactly.
 
-### Disputes
+### Disputes, Nov 3 and 5 2026
 
-Not yet run on the sandbox. Opening a dispute needs a paid payment intent, and this sandbox account is not yet enabled for online payments (requested from Airwallex). The dispute agent runs end to end against a sandbox simulator in `tests/disputes.test.ts`, and the code calls the real `/api/v1/pa/payment_disputes` endpoints. Once the account is enabled, **Stage demo disputes** on `/disputes` runs it live.
+Each demo order was paid in the sandbox with the test card (a real payment intent), the dispute was opened through Airwallex's dispute simulation endpoint, and the answer went through the live dispute API: accept, or challenge with an uploaded evidence PDF.
 
+| Order | Claim | Payment intent | Dispute | Decision |
+|---|---|---|---|---|
+| `ord_1042`, $1,240.00 | 10.4 fraud | `int_sgpvzt5tmhnu0hieihx` | `dst_sgpvlnh7whnu0hjl1rr` | Challenged, evidence PDF uploaded; CHALLENGED |
+| `ord_1077`, $18.00 | 13.1 not received | `int_sgpv524gvhnu0hjxb9q` | `dst_sgpv8vfddhnu0hl1u6c` | Accepted; ACCEPTED |
+| `ord_1103`, $86.00 | 13.6 credit not processed | `int_sgpvzt5tmhnu0hlf2oz` | `dst_sgpv8vfddhnu0hmaiz1` | Sent to a person: support never replied, and the seller's note that told the reviewer to challenge was flagged and ignored |
+| `ord_1118`, $54.00 | 13.6 credit not processed | `int_sgpvtdh4nhnw88usql7` | `dst_sgpv86dbkhnw88w6upx` | Refunded for real first, refund `rfd_sgpvtdh4nhnw88vtv0e_8usql7`; then challenged with the refund record as evidence at a 65% win estimate; CHALLENGED |
 
-Nov 5 2026: order `ord_1118` was paid with the sandbox test card and refunded for real through Payment Acceptance, refund `rfd_sgpvtdh4nhnw88vtv0e_8usql7` ($54.00). The simulated credit-not-processed dispute on it was challenged with the refund record as the evidence, at a 65% win estimate.
-## What Phase 1 provides
+## Reading the code
+
+| Where | What |
+|---|---|
+| `src/lib/purchases` | Terms reading and quote verification, rules and cash projection, card controls, card issuance |
+| `src/lib/visa` | TAP signing and verification (RFC 9421), the demo merchant, the VIC stand-in, remote authorization |
+| `src/lib/settlement` | Onboarding, settlement cycles and reserves, carrier failure exposure, bridging, reconciliation |
+| `src/lib/disputes` | Facts and source trust rules, the evidence scorer and economics, refunds, the evidence packet, the pipeline |
+| `src/lib/ledger`, `src/lib/events`, `src/lib/approvals`, `src/lib/audit` | Double-entry ledger, event dedupe, approvals with separation of duties, the audit trail |
+| `src/lib/airwallex` | The API client, idempotent outbound calls, Issuing, Platform, Payment Acceptance, simulation, webhook verification |
+| `src/lib/models` | The two Claude clients and their prompts; models return structured readings, never decisions |
+| `src/lib/story` | Run the story: the nine steps and their reuse rules |
+| `src/lib/db/migrations.ts` | Every table, constraint and trigger, including the ones that refuse edits and self-approval |
+| `eval/` | The labeled sets and the runner behind the measured numbers |
+| `tests/` | 103 tests against an embedded Postgres, with fakes that behave like the sandbox |
+
+## Foundations
 
 | Piece | Guarantee |
 |---|---|
@@ -103,7 +125,7 @@ Nov 5 2026: order `ord_1118` was paid with the sandbox test card and refunded fo
 | Webhook intake | HMAC-SHA256 over the timestamp and raw body, with a replay window, verified before any JSON is parsed. |
 | Never pay twice | Each money-moving operation gets one Airwallex request_id, stored before the call and reused on every retry. |
 | Audit trail | Every decision by rules, a model, a person or the system is recorded with its inputs and outcome. |
-| Approval queue | One pending approval per subject. Human decisions are written to the audit trail. |
+| Approval queue | One pending approval per subject. The requester can never resolve it, approvals expire, and human decisions are written to the audit trail. |
 
 ## Purchase agent (Kits 02 and 05)
 
