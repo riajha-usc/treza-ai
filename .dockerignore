@@ -1,0 +1,10 @@
+node_modules
+.next
+.data
+.git
+.env
+.env.*
+!.env.example
+.claude
+decision.md
+tsconfig.tsbuildinfo
