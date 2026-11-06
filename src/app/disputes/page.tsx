@@ -21,7 +21,7 @@ export default function DisputesPage() {
 
 async function DisputeQueue() {
   await connection();
-  const { rows, canStage, canSync } = await loadDisputeList();
+  const { rows, unmatched, canStage, canSync } = await loadDisputeList();
   return (
     <>
       <PageHeader
@@ -42,7 +42,7 @@ async function DisputeQueue() {
           </>
         }
       />
-      <Panel title="Dispute queue" meta={`${rows.length} total`}>
+      <Panel title="Dispute queue" meta={`${rows.length} total${unmatched ? ` · ${unmatched} on payments Treza did not record` : ""}`}>
         {rows.length === 0 ? (
           <Empty>{canStage ? "No disputes yet. Stage the three demo disputes in your Airwallex sandbox." : "Add Airwallex sandbox keys to stage and sync disputes."}</Empty>
         ) : (

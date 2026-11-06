@@ -10,11 +10,13 @@ export type DisputeListRow = DisputeRow & { seller_name: string | null };
 
 export async function loadDisputeList() {
   const { db, disputes } = await getApp();
+  // The sandbox account can hold disputes on payments Treza never recorded (other databases, other runs). They are counted, not queued.
   const rows = await db.query<DisputeListRow>(
     `SELECT d.*, t.name AS seller_name FROM disputes d LEFT JOIN tenants t ON t.id = d.seller_tenant_id
-     ORDER BY d.created_at DESC LIMIT 100`,
+     WHERE d.order_id IS NOT NULL ORDER BY d.created_at DESC LIMIT 100`,
   );
-  return { rows, canStage: Boolean(disputes.gateway && disputes.simulator), canSync: Boolean(disputes.gateway) };
+  const [{ unmatched }] = await db.query<{ unmatched: number }>("SELECT count(*)::int AS unmatched FROM disputes WHERE order_id IS NULL");
+  return { rows, unmatched, canStage: Boolean(disputes.gateway && disputes.simulator), canSync: Boolean(disputes.gateway) };
 }
 
 export async function loadDisputeDetail(id: string) {
