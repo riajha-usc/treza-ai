@@ -63,3 +63,7 @@ decision.md
 # Lockfile is generated locally and never committed (your rule)
 package-lock.json
 
+
+# Local only: deployment scripts and submission drafts are never committed
+/deploy/
+/docs/
