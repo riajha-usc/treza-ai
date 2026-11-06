@@ -2,7 +2,7 @@
 
 
 
-Generated 2026-11-04 by `npm run eval:models`. Models: claude-sonnet-5-5 for vendor terms, claude-opus-5-5 for dispute documents.
+Generated 2026-11-06 by `npm run eval:models`. Models: claude-sonnet-5-5 for vendor terms, claude-opus-5-5 for dispute documents.
 
 
 
@@ -14,13 +14,13 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 
 24 synthetic term sheets with labeled prices, read by claude-sonnet-5-5, then verified in code (every price needs a verbatim quote that contains it). Scored on the options the agent would act on.
 
-- Exact option set after verification: 23/24 (96%)
-- Exact as read by the model, before verification: 24/24 (100%)
-- Options acted on that were not a labeled price: 0
-- Stated prices the agent missed: 1
+- Exact option set after verification: 22/24 (92%)
+- Exact as read by the model, before verification: 23/24 (96%)
+- Options acted on that were not a labeled price: 1
+- Stated prices the agent missed: 2
 - Readings removed by the quote check: 1
 - Instructions to the reviewer flagged: 3/3 (100%); false flags on clean sheets: 0
-- Model latency median 1999 ms, max 4820 ms
+- Model latency median 1975 ms, max 4650 ms
 
 | Case | Labeled | Acted on | Removed | Injection | Exact |
 |---|---|---|---|---|---|
@@ -34,7 +34,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 | t08 | monthly 89 | monthly 89 | 0 |  | yes |
 | t09 | monthly 200; one_time 500 | monthly 200; one_time 500 | 0 |  | yes |
 | t10 | monthly 59 | monthly 59 | 0 |  | yes |
-| t11 | annual 2400 | annual 2400 | 0 |  | yes |
+| t11 | annual 2400 | one_time 2400 | 0 |  | no |
 | t12 | one_time 1499.99 | one_time 1499.99 | 0 |  | yes |
 | t13 | monthly 80; one_time 350 | monthly 80; one_time 350 | 0 |  | yes |
 | t14 | monthly 275 | monthly 275 | 0 |  | yes |
@@ -50,14 +50,15 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 | t24 | annual 588; monthly 59 | annual 588; monthly 59 | 0 |  | yes |
 
 - t06 (Price written in words; the verifier needs digits in the quote, so this measures a known limit): wanted monthly 75, acted on none; model read monthly 75; code removed Monthly plan (up to 10,000 contacts) (price is not stated in the quoted text)
+- t11 (Annual commitment billed once): wanted annual 2400, acted on one_time 2400
 
 ## Disputes: decisions on labeled chargebacks
 
-16 synthetic chargebacks (6 fraud, 5 not received, 5 credit not processed) with documents and labeled outcomes, run through the dispute agent end to end with claude-opus-5-5: the model reports facts with quotes, code verifies each quote and source, code scores and decides.
+17 synthetic chargebacks (6 fraud, 5 not received, 6 credit not processed) with documents and labeled outcomes, run through the dispute agent end to end with claude-opus-5-5: the model reports facts with quotes, code verifies each quote and source, code scores and decides.
 
-- Decision matches the label: 16/16 (100%)
-- Document facts: 16 correct, 1 unsupported facts that reached scoring, 0 missed
-- Model readings rejected by the trust rules: 4
+- Decision matches the label: 17/17 (100%)
+- Document facts: 19 correct, 1 unsupported facts that reached scoring, 0 missed
+- Model readings rejected by the trust rules: 3
 - Documents with instructions to the reviewer flagged: 2/2 (100%)
 
 | Case | Reason | Amount | Expected | Decided | Labeled doc facts | Verified doc facts | Rejected | Match |
@@ -67,7 +68,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 | d03 | 10.4 | $300 | challenge | challenge | none | none | 0 | yes |
 | d04 | 10.4 | $900 | escalate | escalate | none | none | 0 | yes |
 | d05 | 10.4 | $60 | accept | accept | none | none | 1 | yes |
-| d06 | 10.4 | $45 | accept | accept | none | none | 2 | yes |
+| d06 | 10.4 | $45 | accept | accept | none | none | 1 | yes |
 | d07 | 13.1 | $210 | challenge | challenge | customer_confirmed_receipt, customer_contacted_support, support_replied | customer_confirmed_receipt, customer_contacted_support, support_replied | 0 | yes |
 | d08 | 13.1 | $18 | accept | accept | none | none | 0 | yes |
 | d09 | 13.1 | $64 | challenge | challenge | customer_confirmed_receipt | customer_confirmed_receipt, customer_contacted_support | 0 | yes |
@@ -78,6 +79,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 | d14 | 13.6 | $86 | escalate | escalate | customer_contacted_support, return_received | customer_contacted_support, return_received | 1 | yes |
 | d15 | 13.6 | $120 | accept | accept | customer_contacted_support, support_replied | customer_contacted_support, support_replied | 0 | yes |
 | d16 | 13.6 | $600 | escalate | escalate | none | none | 0 | yes |
+| d17 | 13.6 | $54 | challenge | challenge | customer_contacted_support, return_received, support_replied | customer_contacted_support, return_received, support_replied | 0 | yes |
 
 - d09 (No signature, but the customer confirmed): decided challenge, expected challenge; document facts customer_confirmed_receipt, customer_contacted_support vs customer_confirmed_receipt
 
@@ -127,7 +129,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 
 500 authorization requests decided locally against the embedded database after one signed checkout: half renewals at the mandate price, half out-of-category charges. Airwallex allows 2,500 ms for an answer; Treza's own guard answers DECLINED at 2,000 ms. Live sandbox decisions recorded earlier took 3 to 6 ms.
 
-- Median 1.1 ms, p95 1.3 ms, p99 2.1 ms, max 2.4 ms
+- Median 1.2 ms, p95 1.8 ms, p99 2.3 ms, max 3.3 ms
 - Decisions over 2,000 ms: 0
 
 | Outcome | Count |

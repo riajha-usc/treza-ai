@@ -2,7 +2,7 @@
 
 
 
-Generated 2026-11-04 by `npm run eval`. No model calls: the terms and dispute sets ran with the rules parser and the fake document reader, which measure the code around the model, not the model.
+Generated 2026-11-06 by `npm run eval`. No model calls: the terms and dispute sets ran with the rules parser and the fake document reader, which measure the code around the model, not the model.
 
 
 
@@ -63,10 +63,10 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 
 ## Disputes: decisions on labeled chargebacks
 
-16 synthetic chargebacks (6 fraud, 5 not received, 5 credit not processed) with documents and labeled outcomes, run through the dispute agent end to end with the fake document reader (no model): the model reports facts with quotes, code verifies each quote and source, code scores and decides.
+17 synthetic chargebacks (6 fraud, 5 not received, 6 credit not processed) with documents and labeled outcomes, run through the dispute agent end to end with the fake document reader (no model): the model reports facts with quotes, code verifies each quote and source, code scores and decides.
 
-- Decision matches the label: 16/16 (100%)
-- Document facts: 12 correct, 0 unsupported facts that reached scoring, 4 missed
+- Decision matches the label: 17/17 (100%)
+- Document facts: 15 correct, 0 unsupported facts that reached scoring, 4 missed
 - Model readings rejected by the trust rules: 3
 - Documents with instructions to the reviewer flagged: 2/2 (100%)
 
@@ -88,6 +88,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 | d14 | 13.6 | $86 | escalate | escalate | customer_contacted_support, return_received | customer_contacted_support, return_received | 1 | yes |
 | d15 | 13.6 | $120 | accept | accept | customer_contacted_support, support_replied | customer_contacted_support, support_replied | 0 | yes |
 | d16 | 13.6 | $600 | escalate | escalate | none | none | 0 | yes |
+| d17 | 13.6 | $54 | challenge | challenge | customer_contacted_support, return_received, support_replied | customer_contacted_support, return_received, support_replied | 0 | yes |
 
 - d01 (Strong fraud defence: repeat device, signature, confirmation): decided challenge, expected challenge; document facts customer_confirmed_receipt vs customer_confirmed_receipt, customer_contacted_support, support_replied
 - d07 (Not received, but signed for and confirmed): decided challenge, expected challenge; document facts customer_confirmed_receipt vs customer_confirmed_receipt, customer_contacted_support, support_replied
@@ -138,7 +139,7 @@ Every set is synthetic and labeled by hand; the sets live in `eval/sets`. Number
 
 500 authorization requests decided locally against the embedded database after one signed checkout: half renewals at the mandate price, half out-of-category charges. Airwallex allows 2,500 ms for an answer; Treza's own guard answers DECLINED at 2,000 ms. Live sandbox decisions recorded earlier took 3 to 6 ms.
 
-- Median 1.1 ms, p95 1.3 ms, p99 1.8 ms, max 3.7 ms
+- Median 1.1 ms, p95 1.3 ms, p99 1.8 ms, max 2.5 ms
 - Decisions over 2,000 ms: 0
 
 | Outcome | Count |
