@@ -4,7 +4,9 @@ import { sweepExpiredApprovals } from "@/lib/approvals/sweep";
 import { listAudit } from "@/lib/audit/audit";
 import { testDb, type Db } from "@/lib/db/client";
 import { evaluateDispute, getDispute, type DisputeDecision, type DisputeDeps } from "@/lib/disputes/agent";
+import { assessEvidence } from "@/lib/disputes/assess";
 import { resolveDisputeEscalation } from "@/lib/disputes/execute";
+import { refundOrder } from "@/lib/disputes/refunds";
 import { processDisputes, simulateIssuerRejection, stageDemoDisputes } from "@/lib/disputes/pipeline";
 import { PLATFORM_ACCOUNTS } from "@/lib/ledger/accounts";
 import { accountBalance, ensureTenant } from "@/lib/ledger/ledger";
@@ -26,8 +28,8 @@ beforeEach(async () => {
 const deps = (model: FakeDisputeModel | null = new FakeDisputeModel()): DisputeDeps => ({ db, gateway: aw, simulator: aw, model });
 
 async function byOrder(orderId: string) {
-  const [row] = await db.query<{ id: string; status: string; stage: string; decision: DisputeDecision }>(
-    "SELECT id, status, stage, decision FROM disputes WHERE order_id = $1",
+  const [row] = await db.query<{ id: string; airwallex_dispute_id: string; status: string; stage: string; decision: DisputeDecision }>(
+    "SELECT id, airwallex_dispute_id, status, stage, decision FROM disputes WHERE order_id = $1",
     [orderId],
   );
   return row;
@@ -54,13 +56,13 @@ describe("Kit 04: three disputes, three different decisions", () => {
 
   it("books the challenge fee and the accepted loss in the ledger", async () => {
     await stageDemoDisputes(deps());
-    expect(await accountBalance(db, "platform", PLATFORM_ACCOUNTS.disputeFees, "USD")).toBe(2_000);
+    expect(await accountBalance(db, "platform", PLATFORM_ACCOUNTS.disputeFees, "USD")).toBe(4_000); // two challenges: 1042 and the refunded 1118
     expect(await accountBalance(db, "platform", PLATFORM_ACCOUNTS.disputeLosses, "USD")).toBe(1_800);
   });
 
   it("sends a challenge with an uploaded evidence PDF", async () => {
     await stageDemoDisputes(deps());
-    expect(aw.uploads).toBe(1);
+    expect(aw.uploads).toBe(2); // one packet per challenged dispute
     const docs = (aw.challenges[0].body.supporting_documents as { documents: { file_ids: string[] }[] }).documents;
     expect(docs[0].file_ids).toEqual(["file_1"]);
   });
@@ -100,7 +102,7 @@ describe("evidence integrity", () => {
     const after = await byOrder("ord_1042");
     expect(after.decision.action).toBe("escalate");
     expect(after.decision.reasons[0]).toMatch(/no new evidence/);
-    expect(aw.challenges).toHaveLength(1);
+    expect(aw.challenges.filter((c) => c.id === fraud.airwallex_dispute_id)).toHaveLength(1);
   });
 
   it("without a model, still wins on structured records but sends unread documents to a person", async () => {
@@ -176,5 +178,37 @@ describe("instructions hidden in evidence", () => {
     expect(decision.action).toBe("escalate");
     expect(decision.facts.some((f) => f.code === "refund_issued")).toBe(false);
     expect(decision.rejectedFacts).toContainEqual({ code: "refund_issued", reason: "a seller statement cannot establish this fact" });
+  });
+});
+
+describe("refunds issued through Treza", () => {
+  it("records a real refund, proves credit was processed, and challenges the claim", async () => {
+    await stageDemoDisputes(deps());
+    const d = await byOrder("ord_1118");
+    expect(d.decision.action).toBe("challenge");
+    expect(d.status).toBe("CHALLENGED");
+    expect(d.decision.facts).toContainEqual(expect.objectContaining({ code: "refund_issued", source: "order_record" }));
+    expect(aw.refunds).toHaveLength(1);
+    const [entry] = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM journal_entries WHERE kind = 'refund'");
+    expect(entry.n).toBe(1);
+    const [audit] = await db.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_log WHERE action = 'order.refunded' AND subject_id = 'ord_1118'");
+    expect(audit.n).toBe(1);
+  });
+
+  it("never refunds more than was paid and never twice for the same money", async () => {
+    await stageDemoDisputes(deps());
+    const d = deps();
+    await expect(refundOrder(d, "ord_1118", { reason: "again", by: "test", actor: "human" })).rejects.toThrow(/exceed/);
+    await refundOrder(d, "ord_1077", { amountMinor: 1_000, reason: "partial", by: "Sam Ortiz", actor: "human" });
+    await refundOrder(d, "ord_1077", { amountMinor: 800, reason: "rest", by: "Sam Ortiz", actor: "human" });
+    await expect(refundOrder(d, "ord_1077", { amountMinor: 1, reason: "too much", by: "Sam Ortiz", actor: "human" })).rejects.toThrow(/exceed/);
+    expect(aw.refunds.filter((r) => r.paymentIntentId === aw.refunds[0].paymentIntentId).length).toBeGreaterThan(0);
+    expect(aw.refunds).toHaveLength(3);
+  });
+
+  it("a return that was refunded no longer weakens the case", () => {
+    const facts = (codes: string[]) => codes.map((code) => ({ code: code as never, source: "order_record", quote: "" }));
+    expect(assessEvidence("13.6", facts(["return_received"])).winProbability).toBeLessThan(assessEvidence("13.6", facts([])).winProbability);
+    expect(assessEvidence("13.6", facts(["refund_issued", "return_received"])).strength).toBe("strong");
   });
 });

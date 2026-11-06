@@ -28,6 +28,9 @@ async function stage(db: Db, c: DisputeCase) {
   for (const doc of c.documents) {
     await db.query("INSERT INTO order_documents (id, order_id, kind, title, body, available_at) VALUES ($1, $2, $3, $4, $5, now())", [doc.id, c.id, doc.kind, doc.title, doc.body]);
   }
+  if (c.refunded) {
+    await db.query("INSERT INTO refunds (order_id, airwallex_refund_id, payment_intent_id, amount_minor, currency, status, reason, issued_by) VALUES ($1, $2, $3, $4, 'USD', 'SUCCEEDED', 'Customer returned the item', 'eval')", [c.id, `rf_${c.id}`, `pi_${c.id}`, Math.round(c.amount * 100)]);
+  }
 }
 
 /** The action the labels imply, computed by the same scoring code: a check on the labels themselves. */
@@ -39,6 +42,7 @@ function oracle(c: DisputeCase): string {
   }
   if ((c.prior?.device ?? 0) >= 2) codes.push("prior_orders_same_device");
   if ((c.prior?.ip ?? 0) >= 2) codes.push("prior_orders_same_ip");
+  if (c.refunded) codes.push("refund_issued");
   const facts: Fact[] = codes.map((code) => ({ code, source: "order_record", quote: "" }));
   return decide({ amountMinor: Math.round(c.amount * 100), assessment: assessEvidence(c.reasonCode, facts), policy: DEFAULT_DISPUTE_POLICY }).action;
 }
