@@ -17,9 +17,9 @@ describe("hosted demo access link", () => {
     expect(at("/", "key=k3y-of-sixteen-c")).toEqual({ kind: "grant", redirectTo: "/" });
   });
   it("allows by cookie and denies everything else", () => {
-    expect(at("/story", "", "k3y-of-sixteen-c")).toEqual({ kind: "allow" });
-    expect(at("/story", "", "wrong-cookie-xxxx")).toEqual({ kind: "deny" });
-    expect(at("/story", "key=nope")).toEqual({ kind: "deny" });
+    expect(at("/sellers", "", "k3y-of-sixteen-c")).toEqual({ kind: "allow" });
+    expect(at("/sellers", "", "wrong-cookie-xxxx")).toEqual({ kind: "deny" });
+    expect(at("/sellers", "key=nope")).toEqual({ kind: "deny" });
   });
   it("compares keys without short-circuiting on length or prefix", () => {
     expect(sameKey("abc", "abc")).toBe(true);

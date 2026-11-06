@@ -8,18 +8,12 @@ export function subjectHref(type: string, id: string): string | null {
   if (type === "purchase_request") return `/purchases/${id}`;
   if (type === "dispute") return `/disputes/${id}`;
   if (type === "tenant" || type === "bridge" || type === "settlement") return "/sellers";
-  if (type === "story_run") return "/story";
   return null;
 }
 
 const LABELS: Record<string, string> = {
   "purchase.received": "Purchase request received",
   "order.refunded": "Refund issued through Airwallex",
-  "story.started": "Story run started",
-  "story.step_done": "Story step done",
-  "story.step_skipped": "Story step skipped",
-  "story.step_waiting": "Story step waiting for a person",
-  "story.step_failed": "Story step failed",
   "purchase.terms_read": "Vendor terms read",
   "purchase.assessed": "Purpose and category reviewed",
   "card.issued": "Card issued",
