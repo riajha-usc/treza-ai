@@ -80,6 +80,18 @@ describe("Kit 08: settle sellers", () => {
     expect(lumen[0].status).toBe("ACTIVE");
   });
 
+  it("reuses an account an earlier run already activated without trying to activate it again", async () => {
+    await onboardSellers(deps, TEST_IDENTITIES);
+    const fresh = await testDb();
+    await ensureTenant(fresh, { id: "platform", kind: "platform", name: "Meridian Market" });
+    await seedDemo(fresh);
+    await seedSellerMetrics(fresh);
+    const log = await onboardSellers({ db: fresh, gateway: aw, simulator: aw, sleep: async () => {} }, TEST_IDENTITIES);
+    expect(log.filter((l) => l.includes("from an earlier run (ACTIVE)"))).toHaveLength(3);
+    expect(log.filter((l) => / connected account acct_\d+ ACTIVE$/.test(l))).toHaveLength(3);
+    await fresh.close();
+  });
+
   it("onboards each seller once as an active connected account with its own Global Account", async () => {
     await onboardSellers(deps, TEST_IDENTITIES);
     expect(aw.accounts.size).toBe(3);

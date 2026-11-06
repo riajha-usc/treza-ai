@@ -171,7 +171,7 @@ const deposits: StoryStep = {
 const dispute: StoryStep = {
   id: "dispute",
   title: "A chargeback arrives",
-  promise: "Three chargebacks reach three sellers. Claude Opus 5.5 compiles the evidence, code verifies every quote, and the weak case is accepted instead of fought.",
+  promise: "Four chargebacks reach three sellers. Claude Opus 5.5 compiles the evidence, code verifies every quote, a weak case is accepted, and a refund Treza issued proves itself.",
   async run({ app }): Promise<StepOutcome> {
     const { disputes, db } = app;
     if (!disputes.gateway || !disputes.simulator) return skipped("Sandbox payment simulation is not configured, so no chargeback can be staged.");

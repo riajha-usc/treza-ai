@@ -56,17 +56,20 @@ export async function onboardSellers(deps: SettlementDeps, identities: Record<st
         accountId = result.id;
       }
       // A retry may find an account created on an earlier attempt; make sure its details are complete before submitting.
-      const current = await gateway.getAccount(accountId);
-      if (current.status === "CREATED") {
-        await gateway.updateAccount(accountId, p);
-        await gateway.submitAccount(accountId);
-      }
-      await wait(deps, 2_000); // The guide: wait about two seconds after submit.
-      await simulator.activateAccount(accountId);
       let status = (await gateway.getAccount(accountId)).status;
-      for (let i = 0; i < 10 && status !== "ACTIVE"; i++) {
-        await wait(deps, 1_000);
+      if (status === "CREATED") {
+        await gateway.updateAccount(accountId, p);
+        status = (await gateway.submitAccount(accountId)).status;
+      }
+      // An account from an earlier run may already be active; the sandbox refuses to activate it twice.
+      if (status !== "ACTIVE") {
+        await wait(deps, 2_000); // The guide: wait about two seconds after submit.
+        await simulator.activateAccount(accountId);
         status = (await gateway.getAccount(accountId)).status;
+        for (let i = 0; i < 10 && status !== "ACTIVE"; i++) {
+          await wait(deps, 1_000);
+          status = (await gateway.getAccount(accountId)).status;
+        }
       }
       await db.query("UPDATE tenants SET airwallex_account_id = $2 WHERE id = $1", [p.tenantId, accountId]);
       await recordDecision(db, { tenantId: p.tenantId, actor: "system", action: "seller.onboarded", subjectType: "tenant", subjectId: p.tenantId, outcome: { accountId, status } });

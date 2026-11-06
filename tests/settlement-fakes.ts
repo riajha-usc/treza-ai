@@ -41,6 +41,8 @@ export class FakePlatform implements PlatformGateway, PlatformSimulator {
     return { id, status: "SUBMITTED" };
   }
   async activateAccount(id: string) {
+    // The sandbox answers 400 "Account needs to be submitted for review" for an account that is already active.
+    if (this.accounts.get(id)!.status === "ACTIVE") throw new Error("400 bad_request: Account needs to be submitted for review before using this endpoint");
     this.accounts.get(id)!.status = "ACTIVE";
   }
   async getAccount(id: string) {
