@@ -49,6 +49,13 @@ export class FakeDisputes implements DisputeGateway, DisputeSimulator {
     this.disputes.get(id)!.status = "CHALLENGED";
     return this.getDispute(id);
   }
+  refunds: { id: string; paymentIntentId: string; amount: number }[] = [];
+  async createRefund(input: { paymentIntentId: string; amount: number }) {
+    if (!this.intents.has(input.paymentIntentId)) throw new AirwallexError(404, "not_found", `Unknown payment intent ${input.paymentIntentId}`);
+    const r = { id: `rf_${++this.seq}`, paymentIntentId: input.paymentIntentId, amount: input.amount };
+    this.refunds.push(r);
+    return { id: r.id, status: "RECEIVED", amount: input.amount };
+  }
   async uploadEvidence() {
     return { file_id: `file_${++this.uploads}` };
   }

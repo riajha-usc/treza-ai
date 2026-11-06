@@ -19,6 +19,7 @@ export interface DisputeGateway {
   acceptDispute(id: string, input: { requestId: string; reason: string; description: string }): Promise<AirwallexDispute>;
   challengeDispute(id: string, body: Record<string, unknown>): Promise<AirwallexDispute>;
   uploadEvidence(pdf: Uint8Array, filename: string): Promise<{ file_id: string }>;
+  createRefund(input: { requestId: string; paymentIntentId: string; amount: number; currency: string; reason: string }): Promise<{ id: string; status: string; amount: number }>;
 }
 
 /** Sandbox-only steps: paying with the test card and moving disputes along. */
@@ -53,6 +54,12 @@ export class AirwallexDisputeGateway implements DisputeGateway {
     // The builder guide: accept and challenge over REST, not MCP.
     return this.client.request<AirwallexDispute>("POST", `/api/v1/pa/payment_disputes/${id}/accept`, {
       body: { request_id: input.requestId, reason: input.reason, description: input.description },
+    });
+  }
+
+  createRefund(input: { requestId: string; paymentIntentId: string; amount: number; currency: string; reason: string }) {
+    return this.client.request<{ id: string; status: string; amount: number }>("POST", "/api/v1/pa/refunds/create", {
+      body: { request_id: input.requestId, payment_intent_id: input.paymentIntentId, amount: input.amount, currency: input.currency, reason: input.reason },
     });
   }
 

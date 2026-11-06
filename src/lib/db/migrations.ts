@@ -521,4 +521,23 @@ CREATE TABLE story_steps (
   PRIMARY KEY (run_id, step)
 )`,
   },
+  {
+    id: "009_refunds",
+    sql: `
+-- Refunds issued through Airwallex and recorded by Treza. A refund in this
+-- table is the only thing that can prove "a refund was issued" in a dispute.
+CREATE TABLE refunds (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id text NOT NULL REFERENCES orders(id),
+  airwallex_refund_id text NOT NULL UNIQUE,
+  payment_intent_id text NOT NULL,
+  amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+  currency char(3) NOT NULL,
+  status text NOT NULL,
+  reason text,
+  issued_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX refunds_order_idx ON refunds (order_id)`,
+  },
 ];
