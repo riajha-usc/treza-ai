@@ -5,6 +5,7 @@ import { toMajor } from "../money/money";
 import { evaluateDispute, getDispute, ingestDispute, type DisputeDeps } from "./agent";
 import { DEMO_DISPUTES, seedDemoOrders } from "./demo";
 import { book, executeDispute } from "./execute";
+import { listRefunds, refundOrder } from "./refunds";
 
 const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
 
@@ -47,6 +48,8 @@ export async function stageDemoDisputes(deps: DisputeDeps): Promise<string[]> {
     await onceForOperation(db, { key: `pi-confirm:${o.id}`, method: "POST", path: "/api/v1/pa/payment_intents/confirm" }, (requestId) =>
       simulator.payWithTestCard(pi.id, requestId),
     );
+    // Some refunds happen before the chargeback. Issued for real, so the record can prove it later.
+    if (c.refundedBefore && !(await listRefunds(db, o.id)).length) await refundOrder(deps, o.id, { reason: c.refundedBefore.reason, by: c.refundedBefore.by, actor: "system" });
     await onceForOperation(db, { key: `dispute-sim:${o.id}`, method: "POST", path: "/api/v1/simulation/pa/payment_disputes/create" }, () =>
       simulator.createDispute({ paymentIntentId: pi.id, reasonCode: c.reasonCode, stage: "RFI", dueAt: inDays(7), amount }),
     );

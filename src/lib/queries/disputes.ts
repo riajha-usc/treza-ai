@@ -1,6 +1,7 @@
 import { getApp } from "../app";
 import type { ApprovalRow } from "../approvals/approvals";
 import { sweepExpiredApprovals } from "../approvals/sweep";
+import { listRefunds } from "../disputes/refunds";
 import { listAudit } from "../audit/audit";
 import type { DisputeDecision } from "../disputes/agent";
 import type { DisputeRow, OrderRow } from "../disputes/records";
@@ -39,10 +40,12 @@ export async function loadDisputeDetail(id: string) {
     "SELECT * FROM approvals WHERE subject_type = 'dispute' AND subject_id = $1 ORDER BY requested_at DESC LIMIT 1",
     [id],
   );
+  const refunds = row.order_id ? await listRefunds(db, row.order_id) : [];
   return {
     row,
     decision: (Object.keys(row.decision).length ? row.decision : null) as DisputeDecision | null,
     order: order ?? null,
+    refunds,
     documents,
     submissions,
     approval: approval ?? null,

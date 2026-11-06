@@ -7,6 +7,8 @@ interface ReasonRule {
   supporting: Partial<Record<FactCode, number>>;
   /** Facts that weaken the case, for example a signature-free delivery. */
   weakening: Partial<Record<FactCode, number>>;
+  /** A weakening fact that stops counting once another fact is present. */
+  weakeningUnless?: Partial<Record<FactCode, FactCode>>;
   /** Patterns that mean a person should decide, whatever the numbers say. */
   redFlags: { when: FactCode[]; unless?: FactCode[]; reason: string }[];
 }
@@ -34,7 +36,9 @@ export const REASON_RULES: Record<string, ReasonRule> = {
   "13.6": {
     label: "Credit not processed",
     supporting: { refund_issued: 0.6 },
+    // A return the merchant received and never refunded weakens the case; once the refund is on record it is neutral.
     weakening: { return_received: 0.3 },
+    weakeningUnless: { return_received: "refund_issued" },
     redFlags: [
       {
         when: ["customer_contacted_support"],
@@ -71,7 +75,10 @@ export function assessEvidence(reasonCode: string, facts: Fact[]): Assessment {
       supporting.push(code);
     } else missing.push(code);
   }
-  for (const [code, w] of Object.entries(rule.weakening) as [FactCode, number][]) if (have.has(code)) p -= w;
+  for (const [code, w] of Object.entries(rule.weakening) as [FactCode, number][]) {
+    const unless = rule.weakeningUnless?.[code];
+    if (have.has(code) && !(unless && have.has(unless))) p -= w;
+  }
   p = Math.max(0.02, Math.min(0.9, p));
   const redFlags = rule.redFlags
     .filter((f) => f.when.every((c) => have.has(c)) && !(f.unless ?? []).some((c) => have.has(c)))

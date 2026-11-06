@@ -95,6 +95,15 @@ export async function structuredFacts(q: Queryable, o: OrderRow): Promise<Fact[]
       facts.push({ code: "delivered_to_billing_address", source: "order_record", quote: `Shipped to the billing address: ${o.billing_address}` });
     }
   }
+  // A refund is a fact only when Treza issued it through Airwallex and holds the record.
+  const refunds = await q.query<{ airwallex_refund_id: string; amount_minor: number; created_at: string }>(
+    "SELECT airwallex_refund_id, amount_minor, created_at FROM refunds WHERE order_id = $1 AND status IN ('RECEIVED', 'ACCEPTED', 'SUCCEEDED') ORDER BY created_at",
+    [o.id],
+  );
+  if (refunds.length) {
+    const total = refunds.reduce((sum, r) => sum + Number(r.amount_minor), 0);
+    facts.push({ code: "refund_issued", source: "order_record", quote: `Refund ${refunds.map((r) => r.airwallex_refund_id).join(", ")} of ${format(total, o.currency)} issued ${day(refunds[0].created_at)} through Airwallex` });
+  }
   return facts;
 }
 

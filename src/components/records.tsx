@@ -14,6 +14,7 @@ export function subjectHref(type: string, id: string): string | null {
 
 const LABELS: Record<string, string> = {
   "purchase.received": "Purchase request received",
+  "order.refunded": "Refund issued through Airwallex",
   "story.started": "Story run started",
   "story.step_done": "Story step done",
   "story.step_skipped": "Story step skipped",

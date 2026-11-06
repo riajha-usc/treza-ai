@@ -5,7 +5,7 @@ import { date, dateTime } from "@/components/time";
 import { Empty, Facts, PageHeader, Panel, PanelBody, Tag } from "@/components/ui";
 import { format } from "@/lib/money/money";
 import { loadDisputeDetail } from "@/lib/queries/disputes";
-import { decideEscalationAction, issuerRejectsAction, resolveAction } from "../actions";
+import { decideEscalationAction, issuerRejectsAction, resolveAction, refundOrderAction } from "../actions";
 import { STATUS_TONE } from "../tags";
 import { DecisionPanel, EvidencePanel } from "./panels";
 
@@ -92,8 +92,17 @@ async function Detail({ id }: { id: string }) {
                   ["Tracking", order.tracking_number ? <span key="t" className="font-mono text-xs">{order.tracking_number}</span> : "None"],
                   ["Shipped", order.shipped_at ? date(order.shipped_at) : "Not shipped"],
                   ["Delivered", order.delivered_at ? date(order.delivered_at) : "No delivery scan"],
+                  ["Refunded", d.refunds.length ? `${format(d.refunds.reduce((s, r) => s + Number(r.amount_minor), 0), order.currency)} on ${date(d.refunds[0].created_at)}` : "No refund on record"],
                 ]}
               />
+              {order.payment_intent_id && !d.refunds.length && row.status === "REQUIRES_RESPONSE" ? (
+                <form action={refundOrderAction} className="flex items-center justify-between gap-3 border-t border-line px-4 py-3">
+                  {hidden("disputeId", row.id)}
+                  {hidden("orderId", order.id)}
+                  <span className="text-xs text-muted">Issues the refund through Airwallex and records it. The record becomes evidence.</span>
+                  <button className="btn btn-sm">Refund the buyer</button>
+                </form>
+              ) : null}
             </Panel>
           ) : null}
           {d.canSimulate && ["CHALLENGED", "PENDING_DECISION"].includes(row.status) ? (
