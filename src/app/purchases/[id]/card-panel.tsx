@@ -73,7 +73,7 @@ export function TransactionsPanel({ d }: { d: PurchaseDetail }) {
                 <td>{t.merchant_name}</td>
                 <td className="num">{format(t.amount_minor, t.currency)}</td>
                 <td className="num">
-                  <Tag tone={t.outcome === "accepted" ? "good" : t.outcome === "declined" ? "bad" : "neutral"}>{t.outcome === "accepted" ? "Cleared" : (t.failure_reason ?? t.outcome).replaceAll("_", " ").toLowerCase()}</Tag>
+                  <Tag tone={t.outcome === "accepted" ? "good" : t.outcome === "declined" ? "bad" : "neutral"}>{t.outcome === "accepted" ? "Cleared" : declineLabel(t.failure_reason ?? t.outcome)}</Tag>
                 </td>
               </tr>
             ))}
@@ -113,4 +113,16 @@ function ChargeButton({ d, amountMinor, mcc, label, text }: { d: PurchaseDetail;
       <button className="btn btn-sm">{text}</button>
     </form>
   );
+}
+
+/** Airwallex decline codes as short words that fit the column. */
+function declineLabel(code: string): string {
+  const known: Record<string, string> = {
+    LIMIT_EXCEEDED: "Over limit",
+    MERCHANT_CATEGORY_NOT_ALLOWED: "Category blocked",
+    CURRENCY_NOT_ALLOWED: "Currency blocked",
+    TRANSACTION_BLOCKED: "Blocked",
+    CARD_INACTIVE: "Card inactive",
+  };
+  return known[code] ?? code.replaceAll("_", " ").toLowerCase();
 }
