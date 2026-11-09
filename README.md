@@ -4,7 +4,9 @@ Autonomous, multi-tenant agentic banking copilot built on Airwallex. Treza unite
 
 Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 and 08.
 
-> Video (4:55): https://youtu.be/3XNyHMeLmpY. The problem, what Treza is and for whom, why now, how it works against the live sandbox, and what is measured.
+> Video : https://youtu.be/3XNyHMeLmpY. 
+
+The problem, what Treza is and for whom, why now, how it works against the live sandbox, and what is measured.
 
 > Status: purchases, the Visa agent checkout, settlement, bridging, disputes and a real refund have all run against the Airwallex sandbox; every ID is in [Live sandbox evidence](#live-sandbox-evidence). The two Visa pieces that need Visa credentials are labeled stand-ins. Measured numbers are in [Measured, not claimed](#measured-not-claimed).
 
