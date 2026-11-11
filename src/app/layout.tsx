@@ -9,7 +9,7 @@ const plexSans = IBM_Plex_Sans({ variable: "--font-plex-sans", subsets: ["latin"
 const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"], weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "Treza AI",
+  title: "Treza",
   description:
     "Autonomous multi-tenant banking copilot on Airwallex: spend control, seller settlement and dispute defense in one closed loop.",
 };

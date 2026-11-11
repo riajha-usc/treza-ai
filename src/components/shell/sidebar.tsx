@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { TrezaMark } from "./treza-mark";
 import { connection } from "next/server";
 import { currentActor } from "@/lib/actor";
 import { loadShell } from "@/lib/queries/shell";
@@ -11,7 +12,7 @@ export function Sidebar() {
     <aside className="sticky top-0 z-20 h-screen w-[232px] flex-none border-r border-line bg-surface transition-[width] duration-200 collapsed:w-[76px]">
       <div className="flex h-full flex-col gap-5 overflow-y-auto overflow-x-hidden px-3 py-4 collapsed:gap-2.5 collapsed:px-1.5 collapsed:py-3">
         <div className="flex items-center gap-2 px-2 py-0.5 text-[15px] font-semibold tracking-[-0.01em] collapsed:justify-center collapsed:px-0 collapsed:pb-1.5">
-          <span aria-hidden className="flex size-5 items-center justify-center rounded bg-primary text-2xs text-primary-ink">T</span>
+          <TrezaMark className="size-5 shrink-0 text-primary" />
           <span className="collapsed:hidden">Treza</span>
         </div>
         <div className="flex flex-col gap-px rounded-md border border-line px-2.5 py-2 collapsed:hidden">
