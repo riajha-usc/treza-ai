@@ -6,6 +6,8 @@ Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 
 
 > Video : https://youtu.be/3XNyHMeLmpY. 
 
+> Live: [open the hosted console](https://tr-220e6fb16d0a439eb719cb7274205204.ecs.us-west-2.on.aws/?key=26851a0576e99e489458888d493216e7)
+
 The problem, what Treza is and for whom, why now, how it works against the live sandbox, and what is measured.
 
 > Status: purchases, the Visa agent checkout, settlement, bridging, disputes and a real refund have all run against the Airwallex sandbox; every ID is in [Live sandbox evidence](#live-sandbox-evidence). The two Visa pieces that need Visa credentials are labeled stand-ins. Measured numbers are in [Measured, not claimed](#measured-not-claimed).
@@ -21,8 +23,6 @@ npm run dev
 ```
 
 Open http://localhost:3000. The console runs with no keys at all, using embedded Postgres, and the Overview shows a setup banner while integrations are missing. Add Airwallex sandbox keys to issue cards and settle sellers, and a Claude key to let the models read documents.
-
-Live: [open the hosted console](https://tr-220e6fb16d0a439eb719cb7274205204.ecs.us-west-2.on.aws/?key=26851a0576e99e489458888d493216e7)
 
 ```bash
 npm test          # 103 unit and integration tests, offline, against embedded Postgres
