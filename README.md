@@ -10,7 +10,7 @@ Built for the Airwallex Agentic Banking Hackathon using Starter Kits 02, 04, 05 
 
 The problem, what Treza is and for whom, why now, how it works against the live sandbox, and what is measured.
 
-> Status: purchases, the Visa agent checkout, settlement, bridging, disputes and a real refund have all run against the Airwallex sandbox; every ID is in [Live sandbox evidence](#live-sandbox-evidence). The two Visa pieces that need Visa credentials are labeled stand-ins. Measured numbers are in [Measured, not claimed](#measured-not-claimed).
+> Status: purchases, the Visa agent checkout, settlement, bridging, disputes and a real refund have all run against the Airwallex sandbox; every ID is in Appendix A of the [technical documentation](Treza-Technical-Documentation.pdf). The two Visa pieces that need Visa credentials are labeled stand-ins. Measured numbers are in [Measured, not claimed](#measured-not-claimed).
 
 ## Quickstart
 
@@ -31,102 +31,9 @@ npm run typecheck # TypeScript
 npm run lint
 ```
 
-## Live sandbox evidence
+## Documentation
 
-Everything below ran from this code against the Airwallex sandbox (`api.sandbox.airwallex.com`). The IDs are real sandbox objects. *Simulation endpoint* marks a charge or deposit created through Airwallex's own sandbox simulation API; *stand-in* marks Treza code standing in for a Visa service that needs credentials we do not have. The console and the tests use the same code paths; nothing in the app is a mock.
-
-### Purchase agent, Oct 31 2026
-
-| Step | Result | Sandbox ID |
-|---|---|---|
-| Vendor terms read by Claude Sonnet 5.5 | Two prices found, both quoted word for word, 2,893 ms | audit log |
-| Purpose review by Claude Sonnet 5.5 | Approve, 3,325 ms | audit log |
-| Virtual card issued | Visa ending 1105: $480 per charge, $1,440 lifetime, software merchants only | card `b3995571-46b3-476f-9c6a-97760dc60921` |
-| Monthly charge, $480.00 | Accepted | `01a19177-df7e-7000-b44e-6de11ab40314` (simulation endpoint) |
-| Annual price, $4,723.20 | Declined by the card: LIMIT_EXCEEDED | `01a19177-f218-7000-9b43-f435a3241008` (simulation endpoint) |
-| Restaurant, $40.00 | Declined by the card: MERCHANT_CATEGORY_NOT_ALLOWED | `01a19178-0182-7000-a6fd-d3ab4a0be9c8` (simulation endpoint) |
-
-### Visa agent checkout, Nov 3 2026
-
-Card ending 5255, `32ae0bc0-e234-409d-b569-01d669639c4b`, issued for the Parcelwise monthly plan.
-
-| Step | Result | ID |
-|---|---|---|
-| Mandate created in VIC's documented shape | Up to $480.00 per charge, monthly | `vic_ccc5b514-0bbc-4870-bef8-d4cd6066cf4a` (stand-in) |
-| Agent checkout signed with TAP | Merchant passed 9 of 9 checks | checkout `f8d38a73-1b57-4ffb-9d0b-0241d5890ee0` |
-| Treza authorization decision | AUTHORIZED in 6 ms | `local_234c49ff-578b-437e-805e-4fb78fec675e` |
-| Charge, $480.00 | Accepted | `01a19ed4-5cda-7000-a6c1-5f16c06cdfc3` (simulation endpoint) |
-| Same request replayed | Rejected, nonce already used | checkout `a7e45a30-3cfe-408b-a054-b05ee261a14f` |
-| Forged signature | Rejected | checkout `c9ed5490-7457-46bd-9b65-983ec4bc3ec4` |
-| Next month's charge | Treza AUTHORIZED in 6 ms; the card then declined it, LIMIT_EXCEEDED, because the monthly limit was already used in the same calendar month | `local_1f846c88-0760-481b-a118-9975e7caed3d`, `01a19ed6-7d7e-7000-b8a4-c0716e5485bd` |
-| Merchant tries the annual price | DECLINED in 3 ms: above the mandate's per-charge limit. Nothing was charged. | `local_15b8d889-e7fd-41c4-b41b-867968805fa8` |
-
-Airwallex has not yet called `/api/airwallex/remote-auth` itself, because that needs a public URL. The decisions above were computed by that same endpoint's code before each sandbox charge.
-
-### Settlement and bridging, Nov 3 2026
-
-| Seller | Connected account | Global Account |
-|---|---|---|
-| Lumen Home Goods | `acct_KJQuZerUMbGBd1zfkAnR_w` | `e80cc87d-7052-4f31-8be3-bab99b458475` |
-| Harbor & Pine Ceramics | `acct_5sVS6kChO8yEXg4S_X9n-w` | `148bd35d-c87f-406a-a302-763333ebf7fd` |
-| Kestrel Outdoor | `acct_KqsuaPe3O9aA8Of7O2Q2PQ` | `8dc35c06-0eb7-4e9f-8e4a-26402f04e73f` |
-
-Cycle `cycle_202611032317`. Buyer payments of $18,886.00 landed in the platform wallet (deposit `82108726-cb28-43ea-b81f-dbf8f886ad9a`, simulation endpoint).
-
-| Seller | Reserve | Held | Paid out | Transfer |
-|---|---|---|---|---|
-| Harbor | 2.5% | $245.00 | $8,477.00 | `tr_21Mb5AHkOGeiwdh9qKSYiA` SETTLED |
-| Kestrel | 35.0%, new seller | $1,120.00 | $1,504.00 | `tr_uRDFGrqZMsiCUC2W0VGeFQ` SETTLED |
-| Lumen | 6.25% | $400.00 | $5,200.00 | `tr_0TQwnAvhNzmwJs_wUR8cUQ` SETTLED |
-
-| Event | Result | ID |
-|---|---|---|
-| Reconciliation after the cycle | Platform wallet moved $3,705.00, matching the ledger exactly | |
-| Carrier failure at Lumen: 34 parcels, $560.00 in refund requests | Risk low to elevated, reserve target $2,363.60, shortfall $1,963.60 charged from Lumen's wallet | charge `ch_XNLsMGKIM4KUuz6qPwUJtg` |
-| Bridge requests against a $2,500 facility | Kestrel $1,200 funded; Harbor $1,800 and Lumen $1,380 deferred, because the facility never lends against seller reserves | transfer `tr_oGpnWcS0OcOIQZ8LB4oO8A` |
-| Reconciliation | Wallet moved $4,468.60, matching the ledger exactly | |
-| Late deposit lands for Kestrel | $1,200 bridge charged back | charge `ch_u75KWvuzNd6CNpka7Nzocw` |
-| Reconciliation | Wallet moved $5,668.60, matching the ledger exactly | |
-
-A second full run on Nov 3 2026 repeated every step from the pages: cycle `cycle_202611040145` paid Lumen $5,600.00 by transfer `tr_M13-_k2gO0SVQCNsfkdpUQ`, the carrier failure charged `ch_VwscpOWZNJqSNkIivDPuwA`, Harbor's $1,800 bridge was funded by `tr_6Dg7DFtmPfirNpjJC0CdTw` and charged back, and both reconciliations matched.
-
-### Disputes, Nov 3 and 5 2026
-
-Each demo order was paid in the sandbox with the test card (a real payment intent), the dispute was opened through Airwallex's dispute simulation endpoint, and the answer went through the live dispute API: accept, or challenge with an uploaded evidence PDF.
-
-| Order | Claim | Payment intent | Dispute | Decision |
-|---|---|---|---|---|
-| `ord_1042`, $1,240.00 | 10.4 fraud | `int_sgpvzt5tmhnu0hieihx` | `dst_sgpvlnh7whnu0hjl1rr` | Challenged, evidence PDF uploaded; CHALLENGED |
-| `ord_1077`, $18.00 | 13.1 not received | `int_sgpv524gvhnu0hjxb9q` | `dst_sgpv8vfddhnu0hl1u6c` | Accepted; ACCEPTED |
-| `ord_1103`, $86.00 | 13.6 credit not processed | `int_sgpvzt5tmhnu0hlf2oz` | `dst_sgpv8vfddhnu0hmaiz1` | Sent to a person: support never replied, and the seller's note that told the reviewer to challenge was flagged and ignored |
-| `ord_1118`, $54.00 | 13.6 credit not processed | `int_sgpvtdh4nhnw88usql7` | `dst_sgpv86dbkhnw88w6upx` | Refunded for real first, refund `rfd_sgpvtdh4nhnw88vtv0e_8usql7`; then challenged with the refund record as evidence at a 65% win estimate; CHALLENGED |
-
-## Reading the code
-
-| Where | What |
-|---|---|
-| `src/lib/purchases` | Terms reading and quote verification, rules and cash projection, card controls, card issuance |
-| `src/lib/visa` | TAP signing and verification (RFC 9421), the demo merchant, the VIC stand-in, remote authorization |
-| `src/lib/settlement` | Onboarding, settlement cycles and reserves, carrier failure exposure, bridging, reconciliation |
-| `src/lib/disputes` | Facts and source trust rules, the evidence scorer and economics, refunds, the evidence packet, the pipeline |
-| `src/lib/ledger`, `src/lib/events`, `src/lib/approvals`, `src/lib/audit` | Double-entry ledger, event dedupe, approvals with separation of duties, the audit trail |
-| `src/lib/airwallex` | The API client, idempotent outbound calls, Issuing, Platform, Payment Acceptance, simulation, webhook verification |
-| `src/lib/models` | The two Claude clients and their prompts; models return structured readings, never decisions |
-| `src/lib/db/migrations.ts` | Every table, constraint and trigger, including the ones that refuse edits and self-approval |
-| `eval/` | The labeled sets and the runner behind the measured numbers |
-| `tests/` | 103 tests against an embedded Postgres, with fakes that behave like the sandbox |
-
-## Foundations
-
-| Piece | Guarantee |
-|---|---|
-| Double-entry ledger | Every entry balances per currency, checked in code and again by the database at commit. Ledger and audit rows are append-only. |
-| Integer money | Amounts are stored as minor units and converted to Airwallex major units only at the API boundary. |
-| Shared event ledger | Airwallex webhooks and Treza's own events share one table. A redelivered webhook is recognised by its event id and dropped. |
-| Webhook intake | HMAC-SHA256 over the timestamp and raw body, with a replay window, verified before any JSON is parsed. |
-| Never pay twice | Each money-moving operation gets one Airwallex request_id, stored before the call and reused on every retry. |
-| Audit trail | Every decision by rules, a model, a person or the system is recorded with its inputs and outcome. |
-| Approval queue | One pending approval per subject. The requester can never resolve it, approvals expire, and human decisions are written to the audit trail. |
+[Treza-Technical-Documentation.pdf](Treza-Technical-Documentation.pdf): architecture and system diagrams, the three agents, controls, the console, the integration reference, the AWS deployment, measured results, and every sandbox ID.
 
 ## Purchase agent (Kits 02 and 05)
 
