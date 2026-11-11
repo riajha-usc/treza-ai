@@ -22,7 +22,7 @@ npm run dev
 
 Open http://localhost:3000. The console runs with no keys at all, using embedded Postgres, and the Overview shows a setup banner while integrations are missing. Add Airwallex sandbox keys to issue cards and settle sellers, and a Claude key to let the models read documents.
 
-Hosted console: https://tr-220e6fb16d0a439eb719cb7274205204.ecs.us-west-2.on.aws (one Fargate task and a small RDS Postgres in us-west-2, built from this checkout by `deploy/`). It opens with an access link; ask for one.
+Live: [open the hosted console](https://tr-220e6fb16d0a439eb719cb7274205204.ecs.us-west-2.on.aws/?key=26851a0576e99e489458888d493216e7)
 
 ```bash
 npm test          # 103 unit and integration tests, offline, against embedded Postgres
