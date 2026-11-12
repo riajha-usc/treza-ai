@@ -1,4 +1,4 @@
-import { AirwallexError } from "../airwallex/client";
+import { isAirwallexError } from "../airwallex/client";
 import { onceForOperation } from "../airwallex/idempotency";
 import { requestApproval, resolveApproval } from "../approvals/approvals";
 import { recordDecision } from "../audit/audit";
@@ -117,7 +117,7 @@ export async function executeDispute(deps: DisputeDeps, disputeId: string, overr
     await recordDecision(db, { tenantId: d.seller_tenant_id, actor: "system", action: "dispute.challenged", subjectType: "dispute", subjectId: d.id, outcome: { fileId: file.file_id, documents: decision.evidenceDocIds, stage: d.stage } });
     return `Challenged with ${decision.evidenceDocIds.length} new document(s)`;
   } catch (err) {
-    const message = err instanceof AirwallexError ? `${err.code}: ${err.message}` : String(err);
+    const message = isAirwallexError(err) ? `${err.code}: ${err.message}` : String(err);
     await recordDecision(db, { tenantId: d.seller_tenant_id, actor: "system", action: `dispute.${action}_failed`, subjectType: "dispute", subjectId: d.id, outcome: { error: message } });
     return `Failed: ${message}`;
   }

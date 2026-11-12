@@ -18,6 +18,16 @@ export class AirwallexError extends Error {
   }
 }
 
+/**
+ * True for an AirwallexError from any copy of this module. The production build can
+ * bundle a module more than once, and instanceof is false across copies.
+ */
+export function isAirwallexError(err: unknown): err is AirwallexError {
+  if (err instanceof AirwallexError) return true;
+  const e = err as { status?: unknown; code?: unknown } | null;
+  return err instanceof Error && typeof e?.status === "number" && typeof e?.code === "string";
+}
+
 type FetchFn = typeof fetch;
 
 export interface AirwallexConfig {

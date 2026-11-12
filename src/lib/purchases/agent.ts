@@ -1,4 +1,4 @@
-import { AirwallexError } from "../airwallex/client";
+import { isAirwallexError } from "../airwallex/client";
 import { onceForOperation } from "../airwallex/idempotency";
 import type { CardIssuer } from "../airwallex/issuing";
 import type { SandboxSimulator } from "../airwallex/simulation";
@@ -150,7 +150,7 @@ async function ensureCardholder(deps: PurchaseDeps, tenantId: string, tenantName
     holder = await deps.issuer!.createCardholder({ email, firstName: tenantName.split(" ")[0] ?? "Treza", lastName: "Delegate", onBehalfOf });
   } catch (err) {
     // A cardholder created by an earlier run, for example with a fresh database, is reused.
-    const existing = err instanceof AirwallexError && /already associated/i.test(err.message) ? await deps.issuer!.findCardholderByEmail(email, onBehalfOf) : null;
+    const existing = isAirwallexError(err) && /already associated/i.test(err.message) ? await deps.issuer!.findCardholderByEmail(email, onBehalfOf) : null;
     if (!existing) throw err;
     holder = existing;
   }
@@ -258,7 +258,7 @@ export async function issueCardForPurchase(deps: PurchaseDeps, purchaseId: strin
     });
     await emit(db, { key: `card.issued:${card.card_id}`, type: "card.issued", tenantId: req.tenant_id, payload: { purchaseId, cardId: card.card_id } });
   } catch (err) {
-    const message = err instanceof AirwallexError ? `${err.code}: ${err.message}` : String(err);
+    const message = isAirwallexError(err) ? `${err.code}: ${err.message}` : String(err);
     await update(db, purchaseId, { status: "failed", decision: { ...req.decision, issuanceNote: `Card issuance failed: ${message}` } });
     await recordDecision(db, {
       tenantId: req.tenant_id,

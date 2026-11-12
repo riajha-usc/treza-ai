@@ -1,5 +1,5 @@
 import type { Queryable } from "../db/client";
-import { AirwallexError } from "./client";
+import { isAirwallexError } from "./client";
 
 export interface OutboundRow {
   op_key: string;
@@ -44,7 +44,7 @@ export async function onceForOperation<T>(
     // landed. It stays retryable with the same request_id, never a new one.
     // 401 and 403 mean the request was refused before it ran, so a retry
     // after fixing credentials or permissions is safe too.
-    const definitive = err instanceof AirwallexError && !err.retryable && err.status !== 401 && err.status !== 403;
+    const definitive = isAirwallexError(err) && !err.retryable && err.status !== 401 && err.status !== 403;
     await q.query("UPDATE outbound_requests SET status = $2, error = $3, updated_at = now() WHERE op_key = $1", [
       op.key,
       definitive ? "failed" : "unknown",
